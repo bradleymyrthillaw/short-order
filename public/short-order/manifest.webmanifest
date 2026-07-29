@@ -1,0 +1,16 @@
+{
+  "name": "Short Order — Kitchen Brawl",
+  "short_name": "Short Order",
+  "description": "After hours at Chez Samoa, the patrons came back. Grab a cast iron and clear the line.",
+  "start_url": ".",
+  "scope": ".",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
+  "orientation": "landscape",
+  "background_color": "#0d0906",
+  "theme_color": "#0d0906",
+  "icons": [
+    { "src": "../icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "../icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
