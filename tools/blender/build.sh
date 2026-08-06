@@ -16,8 +16,8 @@ OUT="$ASSETS/griddle.glb" blender --background --python "$ROOT/tools/blender/mak
 OUT="$ASSETS/counterbase.glb" blender --background --python "$ROOT/tools/blender/make_counter.py" 2>&1 | grep -E "WROTE|Error" || true
 OUT="$ASSETS/fryer.glb"   blender --background --python "$ROOT/tools/blender/make_fryer.py"   2>&1 | grep -E "WROTE|Error" || true
 
-echo "== skyboxes (5 locales x day/night) =="
-for LOCALE in ocean nebula city underwater aurora; do
+echo "== skyboxes (6 locales x day/night) =="
+for LOCALE in ocean nebula city underwater aurora warp; do
   for V in day night; do
     OUT="$ASSETS/sky_${LOCALE}_${V}.glb" VARIANT="$V" blender --background --python "$ROOT/tools/blender/make_sky_${LOCALE}.py" 2>&1 | grep -E "WROTE|Error" || true
   done
@@ -28,7 +28,7 @@ python3 - "$GEN" "$ASSETS" <<'PY'
 import sys, base64, os, json
 gen, adir = sys.argv[1], sys.argv[2]
 manifest = [("plant", "plant.glb"), ("griddle", "griddle.glb"), ("counterbase", "counterbase.glb"), ("fryer", "fryer.glb")]   # (registry key, file) -- add rows as assets grow
-for locale in ("ocean","nebula","city","underwater","aurora"):
+for locale in ("ocean","nebula","city","underwater","aurora","warp"):
     for v in ("day","night"):
         manifest.append(("sky_%s_%s" % (locale, v), "sky_%s_%s.glb" % (locale, v)))
 assets = {}

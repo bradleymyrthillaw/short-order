@@ -26,7 +26,7 @@ class Vec3{
   project(){this.x=0;this.y=0;this.z=0.5;return this;}
 }
 class Vec2{constructor(x=0,y=0){this.x=x;this.y=y;}set(x,y){this.x=x;this.y=y;return this;}}
-class Col{constructor(h){this.h=h;}setHex(h){this.h=h;return this;}}
+class Col{constructor(h){this.h=h;}setHex(h){this.h=h;return this;}getHex(){return this.h;}lerp(){return this;}copy(c){this.h=c?c.h:this.h;return this;}}
 class Scale{constructor(){this.x=1;this.y=1;this.z=1;}set(x,y,z){this.x=x;this.y=y;this.z=z;return this;}setScalar(s){this.x=this.y=this.z=s;return this;}copy(v){this.x=v.x;this.y=v.y;this.z=v.z;return this;}clone(){const s=new Scale();s.x=this.x;s.y=this.y;s.z=this.z;return s;}}
 class Rot{constructor(){this.x=0;this.y=0;this.z=0;}set(x,y,z){this.x=x;this.y=y;this.z=z;return this;}}
 

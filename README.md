@@ -91,7 +91,7 @@ example:
 
 ```bash
 cd render-tools
-OUT_DIR=./shots node _skybox.mjs      # screenshots all 5 locales x day/night
+OUT_DIR=./shots node _skybox.mjs      # screenshots all 6 locales x day/night
 node _plantgame.mjs                    # day-mode kitchen + plant decor sanity check
 node _viewasset.mjs                    # generic single-GLB previewer, needs viewer.html (included) + three.min.js/GLTFLoader.js alongside it, set ASSET=name.glb
 ```

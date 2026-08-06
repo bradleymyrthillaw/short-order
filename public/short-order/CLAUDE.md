@@ -192,11 +192,11 @@ Blender — it produces static assets.
   dynamic glow/flame on top. Registry key == station `def`, so appliance models
   drop in per-def with automatic procedural fallback (`pot` is still procedural).
 - **Skybox:** `tools/blender/sky_common.py` holds shared helpers (`mat`/`box`/
-  `sphere`/`cone_z`/`ring_torus`/`dome_bands`) imported by five locale scripts
-  (`make_sky_ocean.py`, `_nebula`, `_city`, `_underwater`, `_aurora` — `_warp`
-  was cut, it wasn't earning its slot), each reading a `VARIANT=day|night` env
+  `sphere`/`cone_z`/`ring_torus`/`dome_bands`) imported by six locale scripts
+  (`make_sky_ocean.py`, `_nebula`, `_city`, `_underwater`, `_aurora`, `_warp`),
+  each reading a `VARIANT=day|night` env
   var so day and night are genuinely different bakes per locale, not a tint —
-  `build.sh` runs all 10 combinations. `buildSky(locale, isDay)` (index.html,
+  `build.sh` runs all 12 combinations. `buildSky(locale, isDay)` (index.html,
   next to `buildOceanExtras()`) swaps `assetClone('sky_'+locale+'_'+variant)`
   in as `arena.userData.skyAssetG`, called from `dayScene()` on every
   day/night transition. Loaded sky materials are re-mapped onto unlit

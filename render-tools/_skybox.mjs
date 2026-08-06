@@ -19,7 +19,7 @@ await ctx.route(/GLTFLoader\.js/, r=>r.fulfill({ status:200, contentType:'applic
 const p = await ctx.newPage(); await p.bringToFront();
 const errs=[]; p.on('pageerror',e=>errs.push(String(e.message||e))); p.on('console',m=>{if(m.type()==='error')errs.push(m.text());});
 await p.goto(new URL('../public/short-order/index.html', import.meta.url).href,{waitUntil:'load',timeout:30000});
-await p.waitForTimeout(6000);   // let all 16 GLBs parse -- the 12 sky domes are much bigger than the prop assets
+await p.waitForTimeout(6000);   // let all 16 GLBs parse -- the 14 sky domes are much bigger than the prop assets
 
 // NB: ASSETS is a top-level `const` in a classic (non-module) script, so it
 // never attaches to `window` -- must read the bare identifier here, not
@@ -30,7 +30,7 @@ const info = await p.evaluate(()=>({
 }));
 console.log('sky assets declared:', info.soAssets.length, '| loaded so far:', info.loaded.length);
 
-const LOCALES=['ocean','nebula','city','underwater','aurora'];
+const LOCALES=['ocean','nebula','city','underwater','aurora','warp'];
 
 await p.evaluate(()=>{ window.__origUpdateCamera=updateCamera; });   // save before nooping it below
 
