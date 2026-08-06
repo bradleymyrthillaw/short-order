@@ -79,6 +79,15 @@
     text-shadow:0 3px 0 #0009,0 0 26px #ff2fb0cc,0 0 50px #2de2e677}
   #comboL{font-size:12px;letter-spacing:.3em;color:#eaf6ffcc}
 
+  /* grocery-store run chip (timer / takings / stock) */
+  #storehud{position:absolute;left:22px;bottom:44px;text-align:left;display:none}
+  #storehud.on{display:block}
+  #storeT{font-family:"Anton",sans-serif;font-size:34px;line-height:.9;color:var(--cream);
+    text-shadow:0 3px 0 #0009,0 0 22px #8fc866aa}
+  #storeN{font-family:"Anton",sans-serif;font-size:26px;line-height:.9;color:#8be27a;margin-top:2px;
+    text-shadow:0 2px 0 #0009}
+  #storeL{font-size:10px;letter-spacing:.3em;color:#8fc866;margin-top:3px}
+
   /* prompt (pick up weapon / appliance name) -- scales with the stage so it
      reads on a phone; the appliance NAME pops big when you stand in front */
   #prompt{position:absolute;left:50%;bottom:26%;transform:translateX(-50%) translateY(10px);
@@ -374,6 +383,7 @@
   </div>
   <div id="cooks"><div id="cooksN">0</div><div id="cooksL">COOKS ON THE LINE</div><div id="waveL"></div></div>
   <div id="combo"><div id="comboN">0</div><div id="comboL">HIT COMBO</div></div>
+  <div id="storehud"><div id="storeT">90s</div><div id="storeN">$0</div><div id="storeL">STOCK 0/0</div></div>
   <div id="bossbar"><div class="bname">VINCE &middot; THE LANDLORD</div><div class="bwrap"><i class="bfill" id="bfill"></i></div></div>
   <div id="prompt"></div>
   <div id="toast"></div>
@@ -396,7 +406,7 @@
 <button id="bRecipes" aria-label="Recipes">📖</button>
 <div id="recipes"><div class="rcpanel"><div class="rctitle">RECIPES</div><div class="rcsub">grab each ingredient, run it through its step, then plate up</div><div id="rccards"></div><button id="rcClose" class="rcclose">CLOSE ✕</button></div></div>
 <button id="bPause" class="mpause" aria-label="Pause">&#10073;&#10073;</button>
-<div id="pause"><div class="pinner"><div class="ptitle">PAUSED</div><div class="psub">Start &middot; Esc &middot; tap to resume</div><div class="pver" id="pver">MOVEMENT BUILD r66</div><button id="devDrunk" class="pbtn">🍸 MAX DRUNK</button><button id="devVince" class="pbtn">🏗️ FIGHT VINCE</button><button id="devChef" class="pbtn">🧑‍🍳 SWAP CHEF</button><button id="devReset" class="pbtn">🔄 NEW RUN</button></div></div>
+<div id="pause"><div class="pinner"><div class="ptitle">PAUSED</div><div class="psub">Start &middot; Esc &middot; tap to resume</div><div class="pver" id="pver">LEDGE+GROCERY BUILD r67</div><button id="devDrunk" class="pbtn">🍸 MAX DRUNK</button><button id="devVince" class="pbtn">🏗️ FIGHT VINCE</button><button id="devChef" class="pbtn">🧑‍🍳 SWAP CHEF</button><button id="devReset" class="pbtn">🔄 NEW RUN</button></div></div>
 
 <div id="touch">
   <div id="tmovezone"></div>
@@ -1533,7 +1543,7 @@ buildAmbient();
   // flame now -- it used to be hardcoded at a pre-restaurant-kitchen spot
   // that had nothing to do with this bar
   stoveGlow.position.set(BAR.x-BAR.w/2+0.9,1.9,BAR.z);
-  OBST.push({x:BAR.x,z:BAR.z,rx:BAR.w/2+0.35,rz:BAR.d/2+0.35,top:1.2});   // countertop -- hop onto it
+  OBST.push({x:BAR.x,z:BAR.z,rx:BAR.w/2+0.35,rz:BAR.d/2+0.35,top:1.2,night:true});   // countertop -- hop onto it (removed in the grocery store)
 })();
 
 /* the pass — the kitchen/dining boundary, matching the daytime loop's own
@@ -1547,7 +1557,7 @@ const PASS={ x:0, z:0, w:6.6, d:1.5 };
 const PASS_TOP_Y=1.3;                 // just above the countertop (top surface at 1.26)
 function passSlotX(i){ return (i-(PASS_SLOTS-1)/2) * (PASS.w-1.4)/(PASS_SLOTS-1); }
 (function pass(){
-  const g=new THREE.Group(); g.position.set(PASS.x,0,PASS.z); arena.add(g);
+  const g=new THREE.Group(); g.position.set(PASS.x,0,PASS.z); arena.add(g); arena.userData.passG=g;
   const body=new THREE.Mesh(new THREE.BoxGeometry(PASS.w,1.15,PASS.d),
     new THREE.MeshStandardMaterial({color:0x5a4028,roughness:.7,flatShading:true}));
   body.position.y=0.58; body.castShadow=body.receiveShadow=true; g.add(body);
@@ -1564,7 +1574,7 @@ function passSlotX(i){ return (i-(PASS_SLOTS-1)/2) * (PASS.w-1.4)/(PASS_SLOTS-1)
     const bulb=new THREE.Mesh(new THREE.SphereGeometry(0.07,10,6),
       new THREE.MeshStandardMaterial({color:0xfff0c8,emissive:0xffcf8a,emissiveIntensity:2})); bulb.position.set(lx,2.0,0.15); g.add(bulb);
   }
-  OBST.push({x:PASS.x,z:PASS.z,rx:PASS.w/2+0.35,rz:PASS.d/2+0.35,top:1.26});   // the pass -- vault or stand on it
+  OBST.push({x:PASS.x,z:PASS.z,rx:PASS.w/2+0.35,rz:PASS.d/2+0.35,top:1.26,night:true});   // the pass -- vault or stand on it (removed in the grocery store)
 })();
 
 /* dining tables shoved to the walls, chairs stacked seat-down, one tipped
@@ -1746,7 +1756,11 @@ function passSlotX(i){ return (i-(PASS_SLOTS-1)/2) * (PASS.w-1.4)/(PASS_SLOTS-1)
 const WEAPONS = {
   fists:    { key:'fists',    name:'Bare Hands',   cls:'light',  reach:1.05, light:5,  heavy:9,  wind:0.11, rec:0.15, stagger:0.30, gbreak:false, knock:false, dur:Infinity, shake:0.20, heft:0.12, metal:false, tint:0xd8b38a },
   spatula:  { key:'spatula',  name:'Spatula',      cls:'light',  reach:1.65, light:6,  heavy:11, wind:0.10, rec:0.14, stagger:0.35, gbreak:false, knock:false, dur:40, shake:0.24, heft:0.20, metal:true,  tint:0xd7d2c4 },
-  nonstick: { key:'nonstick', name:'Nonstick Pan', cls:'medium', reach:1.6,  light:9,  heavy:18, wind:0.17, rec:0.24, stagger:0.65, gbreak:false, knock:false, dur:32, shake:0.5,  heft:0.58, metal:true,  tint:0x2b2b2f },
+  nonstick: { key:'nonstick', name:'Nonstick Pan', cls:'medium', reach:1.6,  light:9,  heavy:18, wind:0.014, active:0.083, rec:0.111, stagger:0.65, gbreak:false, knock:false, dur:32, shake:0.5,  heft:0.58, metal:true,  tint:0x2b2b2f,
+    /* LINK SWORD SKELETON (decomp A1/A2/A3): swing = wind(0.014)+active(0.083)+rec(0.111)
+       = 0.208s, active window 0.014-0.097s (whoosh proxy), per-cut chain windows
+       0.167/0.181/0.167s into the swing, lunge |speed|*0.2+6.0 m/s at 0.028s (anime f6). */
+    chain:[0.167,0.181,0.167], lunge:{ t:0.028, spd:0.2, base:6.0, hold:0.07, fall:0.09 } },
   castiron: { key:'castiron', name:'Cast Iron',    cls:'heavy',  reach:1.7,  light:16, heavy:32, wind:0.34, rec:0.44, stagger:1.25, gbreak:true,  knock:true,  dur:22, shake:1.0,  heft:1.0,  metal:true,  tint:0x1a1a1c },
   knife:    { key:'knife',    name:"Chef's Knife", cls:'light',  reach:1.85, light:8,  heavy:15, wind:0.10, rec:0.13, stagger:0.30, gbreak:false, knock:false, dur:26, shake:0.28, heft:0.24, metal:true, thrust:true, tint:0xdfe6ea },
   potlid:   { key:'potlid',   name:'Pot Lid',      cls:'shield', reach:1.1,  light:4,  heavy:7,  wind:0.15, rec:0.20, stagger:0.30, gbreak:false, knock:false, dur:48, shake:0.20, heft:0.30, metal:true, shield:true, tint:0xb9c4cc },
@@ -2385,6 +2399,7 @@ function makePlayer(){
     iframe:0, weaveCD:0, dodgeCD:0, dodge:null, tackle:null, tackleCD:0,
     vy:0, jumpCD:0, slam:null, slamHit:0, _air:0,   // vertical jump / air-slam state
     coyoteT:0, jumpBufT:0, _jumpHeldPrev:false,     // jump feel (Engine.move): coyote time + input buffer + variable height
+    ledge:null, ledgeCD:0, _fallFrom:0,            // LEDGE (WW): hang/climb state + re-grab cooldown + fall-origin gate (Engine.move)
     stamina:100, _sprintHold:0, _dblT:{}, _sprintKey:null,   // sprint meter (Engine.move)
     hold:null, grabCD:0, steal:null,                // grab-a-patron / slam-heads / throw-overboard / weapon-steal state
     stagger:0, hurt:0, dead:false, _sq:0,
@@ -2428,8 +2443,9 @@ function makeEnemy(kind, spawnPos, castIdx){
     hp:s.hp, hpMax:s.hp, wpn:s.weapon, spd:s.speed, wind:s.wind, aggr:s.aggr,
     state:'spawn', stateT:rand(0.2,0.8), movePhase:Math.random()*TAU, speed:0,
     attack:null, hasToken:false, stagger:0, hurt:0, dead:false, deadT:0, _sq:0,
-    standoff:WEAPONS[s.weapon].reach + rand(0.25,0.7),
-    commit:(kind==='weak'?0.75:0.6), circleDir:Math.random()<0.5?1:-1, r:0.34*s.scale,
+    home:spawnPos.clone(),                       // deaggro break-off drifts back here
+    cd:0, _aggrod:false,                         // TWW cadence timer + fight latch
+    circleDir:Math.random()<0.5?1:-1, r:0.34*s.scale,
     _an:{ idle:Math.random()*10, twist:0, sway:0, toqueX:0, toqueXv:0, toqueZ:0, toqueZv:0, rx:0, rxv:0, rz:0, rzv:0, prevPh:0 }
   };
   chef.position.copy(spawnPos);
@@ -2609,6 +2625,7 @@ if(bPause) bPause.addEventListener('pointerdown',ev=>{ ev.preventDefault(); if(G
 // doesn't also resume via the tap-to-resume handler above).
 { const dd=document.getElementById('devDrunk');
   if(dd) dd.addEventListener('pointerdown',ev=>{ ev.preventDefault(); ev.stopPropagation();
+    if(!DRUNK_ENABLED) return;             // DRUNK OFF: the MAX-DRUNK dev shortcut is inert too
     if(player){ player.drinks=DRINK_WASTED_AT+2; player.wastedT=1e9; player._drunk=1; player.drinkCD=0; } }); }   // stays maxed the rest of the night
 { const dv=document.getElementById('devVince');
   if(dv) dv.addEventListener('pointerdown',ev=>{ ev.preventDefault(); ev.stopPropagation();
@@ -2718,6 +2735,64 @@ function restY(x,z,y,r){ let s=0;
   for(const o of OBST){ const t=o.top||0; if(t>0.05 && Math.abs(y-t)<0.14 && within(x,z,o,r) && t>s) s=t; }
   return s;
 }
+/* ---- LEDGE (Wind Waker grab / hang / climb) -----------------------------
+   The world side of the WW ledge mechanic: the game finds candidate edges
+   (OBST tops within reach, feet below the top) and feeds the ENGINE's pure
+   grab rule (Engine.move.ledgeGrab); the hang/climb frame is driven by
+   Engine.move.ledgeHang. Crossings are tracked off `prevY` (the pre-gravity
+   feet height), so the hand trajectory is exact per frame. */
+function scanLedge(P, prevY){
+  if(P.ledge || P.ledgeCD>0 || P.slam || P.attack || P.vy===0) return null;
+  const L=Engine.move;
+  const handY=P.pos.y+L.LEDGE_HAND_Y, prevHandY=prevY+L.LEDGE_HAND_Y;
+  let best=null;
+  for(const o of OBST){
+    const t=o.top||0;
+    if(t<L.LEDGE_MIN_TOP || t>L.LEDGE_MAX_TOP) continue;
+    if(Math.abs(P.pos.x-o.x) >= o.rx+P.r+L.LEDGE_REACH) continue;
+    if(Math.abs(P.pos.z-o.z) >= o.rz+P.r+L.LEDGE_REACH) continue;
+    if(P.pos.y > t-L.LEDGE_HANG_Y+0.02) continue;               // feet near/above the top: not grabbable
+    if(Engine.move.ledgeGrab(P,{ edgeTop:t, handY, prevHandY, feet:P.pos.y, vy:P.vy, fallFrom:P._fallFrom||0 })!==null
+      && (!best || t>best.top)) best=o;
+  }
+  if(!best) return null;
+  return { y:best.top-L.LEDGE_HANG_Y, x:best.x, z:best.z };
+}
+/* One frame of hang/climb/drop input. Returns true while the hang OWNS the
+   frame (the caller poses + returns); false once the player is back on the
+   ground (drop released or climb completed). Pure over (P, dt, pad) plus the
+   P1-only keyboard/touch reads (REMOTE=true for P2/bot, like updatePlayer). */
+function ledgeVerbs(P, dt, pad, REMOTE){
+  if(!P.ledge) return false;
+  const C=P.ledge;                                      // shelf centre + hang point, captured pre-clear
+  const up  = (!REMOTE && (KEY['w']||TOUCH.moveY<-0.4)) || pad.move.y < -0.4;
+  const down= (!REMOTE && (KEY['s']||TOUCH.moveY>0.4))  || pad.move.y > 0.4;
+  const drop= (pad.jump||(!REMOTE&&(tapK('shift')||consume('dodgeEdge')))) || down;
+  P.pos.y = Engine.move.ledgeHang(P, dt, { wantUp:up, wantDrop:drop });
+  if(P.ledge){                                          // still hanging or climbing
+    P.vel.x=0; P.vel.z=0; P.vy=0;
+    const L=P.ledge, dx=P.pos.x-L.x, dz=P.pos.z-L.z, dl=Math.hypot(dx,dz);
+    if(dl>0.3){ P.pos.x=L.x+dx/dl*0.3; P.pos.z=L.z+dz/dl*0.3; }   // enemy body-push can drift the hang
+    P._air=1; P.speed=0; P.movePhase=0;
+    return true;
+  }
+  P.vy=0;                                               // climb finished: stand ON the shelf (pull in
+  if(C.cx!=null){ P.pos.x=C.cx; P.pos.z=C.cz; }         // from the edge so the feet actually rest on it)
+  P._fallFrom=0;
+  return false;
+}
+/* The nearest grabbable ledge TOP above the feet (0 = none) — feeds the WW
+   small-jump (Engine.move._launch) so a jump AT an edge clears it instead of
+   bonking into the auto-grab. */
+function nearLedgeTop(P){
+  let top=0;
+  for(const o of OBST){ const t=o.top||0;
+    if(t < P.pos.y+0.18 || t>Engine.move.LEDGE_MAX_TOP) continue;
+    if(Math.abs(P.pos.x-o.x) >= o.rx+P.r+Engine.move.LEDGE_REACH) continue;
+    if(Math.abs(P.pos.z-o.z) >= o.rz+P.r+Engine.move.LEDGE_REACH) continue;
+    if(t>top) top=t; }
+  return top;
+}
 /* HARD body-to-body collision. The enemy AI's soft "separation" steer only
    nudges intent; bodies still walked through each other and the player, which
    is exactly the wrong feel for a brawl -- you should be able to bump, wall off,
@@ -2772,12 +2847,17 @@ function startAttack(atk){ // atk shared by player/enemy: {heavy}
   const A=atk.actor, w=WEAPONS[atk.wpn];
   if(A.attack||A.stagger>0||A.dead||(A.dodge)) return false;
   if(atk.heavy && w.dur!==Infinity && A.dur<2 && A.wpn!=='fists'){ /* not enough for heavy; allow but will break */ }
-  const wind=w.wind*(atk.heavy?1.5:1), active=0.09, rec=w.rec*(atk.heavy?1.3:1);
+  const wind=w.wind*(atk.heavy?1.5:1), active=(w.active!=null?w.active:0.09), rec=w.rec*(atk.heavy?1.3:1);
+  // decomp chain windows (A2): the pan's LIGHT chain gates the next cut at
+  // 0.167/0.181/0.167s into each swing (chainCut=true); other weapons + heavy
+  // keep the old early-buffer feel (wind*0.5).
+  const cw=(!atk.heavy && w.chain)?w.chain:null;
+  const chainOpen=cw?cw[(A.comboStep||0)%cw.length]:wind*0.5;
   A.attack={ wpn:atk.wpn, heavy:atk.heavy, t:0, wind, active, rec, dur:wind+active+rec,
     hitAt:wind, hit:false, side:(A.comboStep%2===0)?1:-1,
     shape:(A.wpn==='fists'
       ? (atk.heavy?HEAVY_PUNCHES[(A.comboStep||0)%HEAVY_PUNCHES.length]:PUNCHES[(A.comboStep||0)%PUNCHES.length])
-      : (atk.heavy?HEAVY_SWINGS[(A.comboStep||0)%HEAVY_SWINGS.length]:SWINGS[(A.comboStep||0)%SWINGS.length])), target:atk.target||null };
+      : (atk.heavy?HEAVY_SWINGS[(A.comboStep||0)%HEAVY_SWINGS.length]:SWINGS[(A.comboStep||0)%SWINGS.length])), chainOpen, chainCut:!!cw, target:atk.target||null };
   if(w.metal) {} // swing sound at hit
   return true;
 }
@@ -2792,6 +2872,20 @@ function attackDrive(a){
   const S=A.shape; const base=(S&&S.drive!=null)?S.drive:0.6;
   const combo=1 + Math.min((a.comboStep||0),4)*0.11;   // later punches in the chain step in further
   const denom=A.active+A.rec || 0.001;
+  const w=WEAPONS[A.wpn];
+  // LINK SWORD LUNGE (decomp A3): the pan fires mNormalSpeed = |speedF|*0.2 + 10.0 u/f
+  // starting at anime frame 6 -> 0.028s into the swing. The 10.0 base converts to
+  // 6.0 m/s (10 u/f * 60fps / 100 u-per-metre) and the 0.2 factor rides the engine's
+  // own current speed. Brief load-back before the step, hold across the active
+  // window, then decay into recovery.
+  if(w && w.lunge){
+    const L=w.lunge, lv=Math.abs(a.speed||0)*L.spd + L.base;
+    let f;
+    if(A.t < L.t){ const wk=A.t/L.t; f = -0.14*(1-wk); }              // coil the weight back
+    else { const over=A.t-L.t;
+      f = over < L.hold ? lv : Math.max(0, lv*(1-(over-L.hold)/L.fall)); }
+    return f * (A.heavy?1.12:1);
+  }
   let f;
   if(A.t < A.wind){
     const wk=A.t/A.wind;
@@ -2938,7 +3032,8 @@ function resolveHit(A, isPlayer){
         kitchenBump(0.2 + weight*0.55); }
     }
     if(isPlayer){ if(T.hp<=0){ killChef(T, ang); } }
-    else { playerHurtFlash(taken); break; } // enemy hits the player once
+    else { if(!blocked) player.iframe=Math.max(player.iframe,0.333);   // decomp A4: mDam 20f = 0.333s post-hit i-frames
+      playerHurtFlash(taken); break; } // enemy hits the player once
   }
   // durability
   if(isPlayer && landed && A.wpn!=='fists' && w.dur!==Infinity){
@@ -2990,7 +3085,7 @@ function killChef(T, ang){
 }
 
 /* ================================================================ PLAYER */
-const GRAV=Engine.move.GRAV, JUMP_V=Engine.move.JUMP_V;   // vertical curve owned by engine.js (floatier -- more hang time)
+const GRAV=Engine.move.GRAV;   // vertical curve owned by engine.js — TWW decomp gravity (0.147 x run top per frame^2)
 const SLAM_HIT=0.14;                    // how long the hammer downswing lasts on contact (snappy)
 // OVERHEAD SLAM: on landing an air-attack, a radial ground-pound. This is the
 // slam's single damage door (invariant #3: a live jump-attack deals it), mirror-
@@ -3051,12 +3146,23 @@ function updatePlayer(dt, pad, actor){
   if(P.dead){ poseChef(P,true,dt); return; }
   if(P.grabbed){ handleGrab(P,dt,pad); poseChef(P,true,dt); return; }
   if(P.steal){ updateSteal(P,dt,pad); poseChef(P,true,dt); return; }   // wrestling an armed enemy for their weapon
+  // ----- LEDGE (WW): the hang owns the frame — no fall, no drift; up climbs,
+  // jump/down drops. poseChef reads a.ledge for the raised-arm hang pose. -----
+  if(ledgeVerbs(P,dt,pad,REMOTE)){
+    // hanging at a shelf edge your HANDS are at the top — pluck top-shelf stock
+    // straight off the ledge (takeSupply re-gates by hand reach)
+    if(pad.pickup||(!REMOTE&&(tapK('f')||consume('pickupEdge')))){
+      if(nearPickup && nearPickup.supply) takeSupply(nearPickup);
+    }
+    poseChef(P,true,dt); updateCOM(P); updatePrompt();
+    return;
+  }
   // ----- squash decay -----
   P._sq=damp(P._sq,0,14,dt);
   // ----- timers -----
   P.comboT=GAME.comboT; if(GAME.comboT>0){ GAME.comboT-=dt; if(GAME.comboT<=0){ GAME.combo=0;
     document.getElementById('combo').classList.remove('on'); } }
-  P.weaveCD=Math.max(0,P.weaveCD-dt); P.dodgeCD=Math.max(0,P.dodgeCD-dt); P.chainT=Math.max(0,P.chainT-dt); P.tackleCD=Math.max(0,P.tackleCD-dt); P.jumpCD=Math.max(0,P.jumpCD-dt); P.slamHit=Math.max(0,P.slamHit-dt); P.grabCD=Math.max(0,P.grabCD-dt);
+  P.weaveCD=Math.max(0,P.weaveCD-dt); P.dodgeCD=Math.max(0,P.dodgeCD-dt); P.chainT=Math.max(0,P.chainT-dt); P.tackleCD=Math.max(0,P.tackleCD-dt); P.jumpCD=Math.max(0,P.jumpCD-dt); P.slamHit=Math.max(0,P.slamHit-dt); P.grabCD=Math.max(0,P.grabCD-dt); P.ledgeCD=Math.max(0,P.ledgeCD-dt);
   // buffered-attack lifetime + combo-target upkeep (see beginSwing / the attack integrate)
   P.bufferT=Math.max(0,(P.bufferT||0)-dt); if(P.bufferT<=0) P.bufferedHeavy=null;
   P.parryT=Math.max(0,(P.parryT||0)-dt);                         // parry window countdown
@@ -3146,8 +3252,12 @@ function updatePlayer(dt, pad, actor){
   const wantJump=pad.jump||(!REMOTE&&(tapK('shift')||consume('dodgeEdge')));   // Circle / Shift / on-screen JUMP -- R2 no longer jumps
   const jumpHeld=pad.actionHeld||(!REMOTE&&!!KEY['shift']);           // hold jump = full height (variable jump)
   const jumpCan=P.jumpCD<=0 && P.stagger<=0 && !P.tackle && !P.attack; // can't jump-cancel a swing
+  // LEDGE HOP (WW small_jump): a jump pressed AT an edge (top above the feet)
+  // is sized to clear it (Engine.move launches the sqrt(2g(drop+7)) hop), so
+  // the auto-grab only catches the jumps that genuinely come up short.
+  const ledgeTop=jumpCan?nearLedgeTop(P):0;
   if(Engine.move.jump(P, dt, { grounded, wantJump, jumpHeld, canJump:jumpCan,
-      moving:mv.lengthSq()>0.02, mvx:mv.x, mvz:mv.z, facing:P.facing })) sfx.step();
+      moving:mv.lengthSq()>0.02, mvx:mv.x, mvz:mv.z, facing:P.facing, ledgeTop })) sfx.step();
 
   // ----- GRAB: pick up a utensil you're standing on, else tackle-charge a person -----
   // Reach is 2.0, not the old 1.0: the weapons sit ON TOP of the pass counter,
@@ -3170,13 +3280,13 @@ function updatePlayer(dt, pad, actor){
   // chug. A real grab/rush target now always wins; the drink is the fallback.
   if(GAME.mode==='day'){ cookVerbs(P,pad,dt); }
   else if(GAME.mode==='plan'){ planVerbs(P,pad,dt); }
-  if(!COOKING && !P.attack && !P.hold && atBar(P) && !grabTarget(P,GRAB_REACH,1.4) && (pad.pickupHeld||(!REMOTE&&(KEY['f']||TOUCH.pickupHeld)))) chugDrink(P);
+  if(!COOKING && !GAME.store && !P.attack && !P.hold && atBar(P) && !grabTarget(P,GRAB_REACH,1.4) && (pad.pickupHeld||(!REMOTE&&(KEY['f']||TOUCH.pickupHeld)))) chugDrink(P);
   if(!COOKING && !P.attack && (pad.pickup||pad.rush||(!REMOTE&&(tapK('f')||consume('pickupEdge'))))){   // no grab/throw/drop/pickup mid-swing
     let ax=mv.x, az=mv.z; const al=Math.hypot(ax,az);
     if(al>1e-3){ ax/=al; az/=al; } else { ax=Math.sin(P.facing); az=Math.cos(P.facing); }
     const barTarget = moving ? (rushTarget(P, ax, az) || grabTarget(P, GRAB_REACH, 1.4)) : grabTarget(P, GRAB_REACH, 1.4);
     if(P.hold){ throwHeld(P); }
-    else if(atBar(P) && !barTarget){ chugDrink(P); }            // at the bar, nobody in reach: chug
+    else if(!GAME.store && atBar(P) && !barTarget){ chugDrink(P); }   // at the bar, nobody in reach: chug (not in the grocery)
     else if(moving){
       const t=barTarget;
       if(t){ if(P.wpn!=='fists') dropWeapon(P); startGrabRush(P, t); }
@@ -3198,6 +3308,7 @@ function updatePlayer(dt, pad, actor){
   // aims and steps in at that exact enemy; a fresh swing (chain window lapsed)
   // picks the nearest thing in front and releases the old lock until we connect.
   function beginSwing(heavy){
+    P.bufferedHeavy=null; P.bufferT=0;   // a fresh swing consumes/clears any queued chain press
     const chaining = P.chainT>0;
     let tgt = (chaining && P.comboTarget && !P.comboTarget.dead) ? P.comboTarget
             : (P.lockOn||nearestEnemy(P.pos,P.facing,1.1)||nearestEnemy(P.pos,P.facing,null));
@@ -3233,12 +3344,19 @@ function updatePlayer(dt, pad, actor){
     // timing) -- accepted only past the wind-up so it queues the NEXT hit, and
     // with a short life so a stale early tap doesn't fire.
     if(!P.attack) beginSwing(wantHeavy);
-    else if(P.attack.t > P.attack.wind*0.5){ P.bufferedHeavy=wantHeavy; P.bufferT=0.5; }
+    else if(P.attack.chainCut){ P.bufferedHeavy=wantHeavy; P.bufferT=0.5; }   // pan light chain: any swing-time press queues, fires at the decomp window (A2)
+    else if(P.attack.t > P.attack.wind*0.5){ P.bufferedHeavy=wantHeavy; P.bufferT=0.5; }   // other weapons/heavy: old buffered feel
   }
 
   // ----- integrate attack -----
   if(P.attack){
     const A=P.attack; A.t+=dt;
+    // DECOMP CHAIN WINDOW (A2): the instant this cut's window opens (0.167/0.181/0.167s
+    // in) a queued press fires the next cut NOW -- cutting the swing short like
+    // procCutA -- so the chain keeps max pace instead of waiting out the recovery.
+    if(A.chainCut && P.bufferedHeavy!=null && P.bufferT>0 && A.t>=A.chainOpen && A.t<A.dur){
+      const h=P.bufferedHeavy; P.bufferedHeavy=null; P.bufferT=0; beginSwing(h);
+    }
     // PHYSICAL COMBO LOCK: until this swing has thrown its hit, keep re-aiming at
     // the committed enemy as it moves (within lunge range) so the step-in and the
     // strike track the exact enemy we're comboing -- not whoever wandered in front.
@@ -3279,7 +3397,7 @@ function updatePlayer(dt, pad, actor){
     blocked:!!(P.guard||P.attack||P.tackle||P.dodge||P.stagger>0) });
 
   // ----- movement integrate -----
-  let spd=6.7;
+  let spd=Engine.move.RUN_TOP;             // engine run top — all decomp ratios scale off this
   if(sprinting) spd*=Engine.move.SPRINT_MULT;
   if(P.guard) spd*=0.42;
   if(P.attack) spd*=0.14;
@@ -3322,12 +3440,29 @@ function updatePlayer(dt, pad, actor){
     P.vel.x=damp(P.vel.x, fx*lv + mv.x*spd, 13, dt);
     P.vel.z=damp(P.vel.z, fz*lv + mv.z*spd, 13, dt);
   } else if(P.stagger<=0){
-    // Engine.move accel feel: crisp accel on press (GROUND_ACC), a little slide
-    // on release (DECEL), and real steering in the air (AIR_ACC, was 3) -- you
-    // commit to the arc of a jump but aren't on rails.
-    const acc=airborne ? Engine.move.AIR_ACC : (moving ? Engine.move.GROUND_ACC : Engine.move.DECEL);
-    P.vel.x=damp(P.vel.x, mv.x*spd, acc, dt);   // ground: velocity ramps -- accel on press, slide on release
-    P.vel.z=damp(P.vel.z, mv.z*spd, acc, dt);
+    if(airborne){
+      // real air steering (kept — the decomp doesn't pin air control)
+      P.vel.x=damp(P.vel.x, mv.x*spd, Engine.move.AIR_ACC, dt);
+      P.vel.z=damp(P.vel.z, mv.z*spd, Engine.move.AIR_ACC, dt);
+    } else {
+      // TWW decomp #1/#2: run target = top*stick^2 with a LINEAR accel of
+      // 0.206 x top per frame (0.081 s 0->top), cos-gated by facing-vs-move —
+      // crisp on press, decisive stop (no slide). Lock caps #3/#4 clamp the
+      // strafe/back targets to 0.294 x / 0.147 x the current run top (spd).
+      const stick=Math.min(1,mv.length());
+      let tx=mv.x*spd, tz=mv.z*spd;
+      if(P.lockOn && !P.lockOn.dead){
+        const cap=(iz>0?Engine.move.LOCK_BACK:Engine.move.LOCK_STRAFE)*spd;
+        const tl=Math.hypot(tx,tz);
+        if(tl>cap){ tx*=cap/tl; tz*=cap/tl; }   // lock-strafe / lock-back cap (decomp #3/#4)
+      } else { tx*=stick; tz*=stick; }          // stick^2 curve (decomp #1)
+      let gate=1;
+      if(moving && !(P.lockOn && !P.lockOn.dead)){ const ml=Math.hypot(mv.x,mv.z);
+        gate=Math.max(0,(Math.sin(P.facing)*mv.x+Math.cos(P.facing)*mv.z)/ml); }  // cos(facing vs move) — run accel only (decomp #2)
+      const rate=Engine.move.ACCEL_RATE*gate;
+      P.vel.x=Engine.move.rateLimit(P.vel.x, tx, rate, dt);
+      P.vel.z=Engine.move.rateLimit(P.vel.z, tz, rate, dt);
+    }
   } else {
     P.vel.multiplyScalar(Math.exp(-6*dt));
   }
@@ -3336,34 +3471,48 @@ function updatePlayer(dt, pad, actor){
   // committed slam drop) lives in Engine.move.gravityMul. -----
   const rest=restY(P.pos.x,P.pos.z,P.pos.y,P.r);
   if(P.pos.y>rest+0.02 || P.vy!==0){
-    const g = GRAV * Engine.move.gravityMul(P);   // float near the apex; snappier overhead-slam drop
+    const g = GRAV * Engine.move.gravityMul(P);   // snappier overhead-slam drop; the old apex-hang is retired
     const prevY=P.pos.y;
+    P._fallFrom=Math.max(P._fallFrom||0, P.pos.y);   // highest feet since this air phase began (drop-past gate)
     P.vy -= g*dt;
+    P.vy = Math.max(P.vy, -Engine.move.TERMINAL);   // decomp #9 fall clamp (10.3 x run top — extreme, WW-style)
     P.pos.y += P.vy*dt;
+    // ---- LEDGE AUTO-GRAB (WW): an edge top the hand crossed this frame grabs
+    // us out of the air — hang, then climb (up) or drop (jump/down). The engine
+    // owns the rule (apex-vs-top clearance, band crossing, falling-past catch).
+    const ledgeHit=scanLedge(P, prevY);
+    if(ledgeHit){
+      P.pos.y=ledgeHit.y; P.vy=0; P.vel.x=0; P.vel.z=0;
+      if(P.ledge){ P.ledge.cx=ledgeHit.x; P.ledge.cz=ledgeHit.z; }   // shelf centre — climb finishes standing there
+      P.jumpCD=Math.max(P.jumpCD,0.2);      // no instant re-jump out of the hang
+      if(AC) sfx.thud(0.6);
+    } else {
     // land on the FLOOR, or on any prop top we crossed DOWN through this frame
     // (one-way: you can jump up past a table, then come down onto it)
     let land = P.pos.y<=0 ? 0 : -1e9;
     for(const o of OBST){ const t=o.top||0;
       if(t>0.05 && prevY>=t-0.04 && P.pos.y<=t && within(P.pos.x,P.pos.z,o,P.r) && t>land) land=t; }
     if(P.pos.y<=land){
+      P._fallFrom=0;                                  // air phase over — fresh origin for the next fall
       const landV=P.vy; P.pos.y=land; P.vy=0;
       if(P.slam){ slamLand(P, landV); P.slam=null; P.slamHit=SLAM_HIT; P.jumpCD=0.18; }  // hammer DOWN on contact
       else {
-        if(landV<-5){ shake(0.12); }             // a little thump on a hard landing
+        if(landV < -Engine.move.HARD_LAND){ shake(0.12); }   // a little thump on a hard landing (threshold rescaled for the TWW gravity)
         // a jump pressed just before touchdown fires the moment we land (buffered)
         if(Engine.move.tryBufferedJump(P, { canJump:P.jumpCD<=0 && P.stagger<=0 && !P.tackle && !P.attack,
             moving:mv.lengthSq()>0.02, mvx:mv.x, mvz:mv.z, facing:P.facing })) sfx.step();
       }
     }
-  }
-  P._air=clamp((P.pos.y-restY(P.pos.x,P.pos.z,P.pos.y,P.r))/1.4,0,1);
+    }   // end ledge-grab else (normal landing path)
+  } else P._fallFrom=0;   // standing on a surface — no fall in progress
+  P._air=clamp((P.pos.y-restY(P.pos.x,P.pos.z,P.pos.y,P.r))/Engine.move.AIR_NORM,0,1);
   P.pos.addScaledVector(P.vel,dt);
   collide(P.pos,P.r);
 
-  // facing while roaming
-  if(!P.attack && !P.lockOn && moving && !P.dodge && !P.tackle) P.facing=angLerp(P.facing, Math.atan2(mv.x,mv.z), Math.min(1,dt*12));
+  // facing while roaming — TWW decomp #10 turn caps (16.48 deg/f, fine 1.37 deg/f)
+  if(!P.attack && !P.lockOn && moving && !P.dodge && !P.tackle) P.facing=Engine.move.turnToward(P.facing, Math.atan2(mv.x,mv.z), dt);
   if(P.lockOn && !P.dead){ const dx=P.lockOn.pos.x-P.pos.x,dz=P.lockOn.pos.z-P.pos.z;
-    if(!P.attack) P.facing=angLerp(P.facing, Math.atan2(dx,dz), Math.min(1,dt*10)); }
+    if(!P.attack) P.facing=Engine.move.turnToward(P.facing, Math.atan2(dx,dz), dt); }
   if(P.dodge) { /* keep facing */ }
 
   if(P.hold) updateHold(P,dt);                  // drive the held patron in front of us (after pos+facing settle)
@@ -3385,6 +3534,27 @@ function updatePlayer2(dt, pad){
 
 /* ================================================================ ENEMY AI */
 const ATTACK_TOKENS=3; let tokensUsed=0;
+/* TWW engagement cadence (decomp d_a_bk.cpp:1989-1992, :2309; enemies.json):
+   the boko makes ONE attack decision per 35f=0.583s tick at 50% chance, fights
+   only inside the ideal band 240+/-62.5 = 4x sword reach +/-26%, fight trigger
+   400 / deaggro 475 (=1.67x / 1.98x the band centre) is the hysteresis, and its
+   chase 20 vs Link run 17 = 1.176x closes on purpose. Short-order lifts are
+   ratio-scaled to the 34x24 arena (aggro/deaggro capped so a break-off is
+   actually reachable by kiting). */
+const ENGAGE = {
+  cd:       0.583,   // 35f cadence -- one attack DECISION per interval
+  chance:   0.5,     // 50% decision chance per cadence tick
+  bandC:    4.0,     // ideal band centre = 4x weapon reach (TWW 240/60)
+  bandH:    0.26,    // band half-width = +/-26% (TWW +/-62.5 / 240)
+  aggro:    1.67,    // fight trigger = 1.67x band centre (TWW 400/240)
+  deaggro:  1.98,    // break-off   = 1.98x band centre (TWW 475/240)
+  aggroMax: 10.5,    // arena cap so kiting can actually break a long-reach mob
+  deaggroMax: 12.5,
+  chase:    1.18,    // committed chase = 1.18x player run (TWW 20/17)
+  playerRun: 6.7,    // engine.js MOVE base run (sprint 8.84 is the escape valve)
+  hold:     [1.7, 4.0]  // break-off hold, TWW idle 100-400f = 1.67-6.67s
+};
+const ENEMY_CHASE = ENGAGE.chase * ENGAGE.playerRun;   // ~7.91 u/s
 function updateEnemy(e, dt){
   e._sq=damp(e._sq,0,14,dt);
   if(e.dead){ // ragdoll (or spring-topple fallback) + fade/remove
@@ -3465,9 +3635,19 @@ function updateEnemy(e, dt){
   }
 
   e.stateT-=dt;
+  if(e.cd>0) e.cd-=dt;                     // TWW 35f cadence ticks in EVERY state
   let move=new V3();
+  let spd=e.spd;                           // chase/press may raise this below
   const reach=WEAPONS[e.wpn].reach;
   const _tang=new V3(-dirP.z,0,dirP.x);   // strafe axis (perp to player)
+  // TWW ideal band (240+/-62.5 = 4x reach +/-26%) + fight/deaggro hysteresis.
+  // Unarmed fighters floor the band at grab range so the point-blank grab stays
+  // reachable; aggro/deaggro are capped to the arena so kiting can break them.
+  const bandC=ENGAGE.bandC*reach;
+  const bandLo=Math.min(bandC*(1-ENGAGE.bandH), e.wpn==='fists'?1.05:Infinity);
+  const bandHi=bandC*(1+ENGAGE.bandH);
+  const aggro=Math.min(ENGAGE.aggro*bandC, ENGAGE.aggroMax);
+  const deaggro=Math.min(ENGAGE.deaggro*bandC, ENGAGE.deaggroMax);
   if(e.state==='spawn'){ if(e.stateT<=0){
     if(e.wpn==='fists' && Math.random()<0.8){ const p=nearestFreePickup(e); if(p){ e.grabTarget=p; e.state='fetch'; } else e.state='engage'; }
     else e.state='engage';
@@ -3501,42 +3681,66 @@ function updateEnemy(e, dt){
     if(!player.grabbed || player.grabbed.by!==e){ e.state='recover'; e.stateT=0.4; }
   }
   else if(e.state==='engage'){
-    // unarmed customers lunge in to grab you
-    if(e.wpn==='fists' && dist<1.05 && !player.grabbed && grabCD<=0 && player.iframe<=0 && !player.dead && Math.random()<0.6){
+    // AGGRO/DEAGGRO HYSTERESIS (TWW fight<400 / patrol>475): the fight latch
+    // trips on the trigger and only breaks off past the deaggro range -- the
+    // mob commits to the brawl, then visibly falls back and re-engages.
+    if(e._aggrod && dist > deaggro){ if(e.hasToken){ e.hasToken=false; tokensUsed--; } e.state='hold'; e.stateT=rand(...ENGAGE.hold); }
+    else if(!e._aggrod && dist < aggro) e._aggrod=true;
+    // unarmed customers lunge in to grab you. A grab is an attack: it takes the
+    // same 35f cadence slot (one roll per interval, not per frame) and respects
+    // the post-attack cooldown, so it can't spam on top of every strike.
+    if(e.wpn==='fists' && dist<1.05 && e.cd<=0 && !player.grabbed && grabCD<=0 && player.iframe<=0 && !player.dead && Math.random()<0.6){
+      e.cd=ENGAGE.cd;
       startGrab(e);
+    } else if(!e._aggrod){
+      move.copy(dirP);                                 // advance until the fight trigger latches
     } else {
-    // hover near standoff and CIRCLE, rather than constantly crowding inward.
-    // The old +0.9 inward bias meant they never settled -- they'd bee-line and
-    // pile onto the player (and each other). +0.25 lets them hold their spacing
-    // at range and orbit, closing only when they commit to an attack (below).
-    let radial=(dist - e.standoff) + 0.25;
-    if(player.attack && !player.attack.hit && dist < reach+1.4){
-      const toE=Math.atan2(e.pos.x-player.pos.x, e.pos.z-player.pos.z);
-      const aim=(player.attack.aim!=null?player.attack.aim:player.facing);
-      let da=((toE-aim+Math.PI)%TAU)-Math.PI;
-      if(Math.abs(da)<0.95) radial -= 1.2;            // small flinch off a swing
-    }
-    if(dist < reach*0.7) radial -= 0.6;
-    if(Math.abs(radial)<0.2) radial=0;
-    // stronger tangential drive (0.72, was 0.42) so the circling actually reads
-    // as walking around you -- and armed ones show their weapon flourish while
-    // they do, instead of standing still in your face.
-    move.copy(_tang).multiplyScalar(e.circleDir*0.72).addScaledVector(dirP, clamp(radial,-1.1,2.0));
-    // in range: commit now. otherwise roll for a dart-in on the beat.
-    if(dist < reach+0.5 && tryToken(e)){ e.state='press'; e.stateT=rand(...e.aggr); }
-    else if(e.stateT<=0){
-      e.circleDir *= Math.random()<0.4?-1:1;
-      e.stateT=rand(0.35,0.85);
-      if(dist < reach+1.7 && Math.random()<e.commit && tryToken(e)){ e.state='press'; e.stateT=rand(...e.aggr); }
-    }
+      // IDEAL BAND (TWW 240+/-62.5 = 4x reach +/-26%): too far -> CHASE at
+      // 1.18x player run (TWW 20/17) so a committed mob closes decisively;
+      // too close -> circle OUT back to the band instead of face-tanking
+      // (a fleeing player keeps the pursuit -- the mob hounds you, it doesn't
+      // reverse-jog, and the press persists until the gap reopens).
+      if(dist > bandHi){ move.copy(dirP); spd=ENEMY_CHASE; }
+      else if(dist < bandLo){
+        const fleeing=Math.hypot(player.vel.x, player.vel.z) > 2.5;
+        move.copy(_tang).multiplyScalar(e.circleDir*0.72).addScaledVector(dirP, fleeing?0:-1.1);
+      }
+      else {
+        // circle: strong tangential drive + a light restoring push to the band
+        let radial=(dist-bandC)*0.5 + 0.2;
+        if(player.attack && !player.attack.hit && dist < reach+1.4){
+          const toE=Math.atan2(e.pos.x-player.pos.x, e.pos.z-player.pos.z);
+          const aim=(player.attack.aim!=null?player.attack.aim:player.facing);
+          let da=((toE-aim+Math.PI)%TAU)-Math.PI;
+          if(Math.abs(da)<0.95) radial -= 1.2;        // small flinch off a swing
+        }
+        if(Math.abs(radial)<0.2) radial=0;
+        move.copy(_tang).multiplyScalar(e.circleDir*0.72).addScaledVector(dirP, clamp(radial,-1.1,2.0));
+        // DECISION TICK: one 50% roll per 0.583s cadence interval (TWW 35f)
+        // gates the attack; movement commitment stays separate. The shared
+        // ATTACK_TOKENS pool remains the crowd budget on top.
+        if(e.cd<=0){
+          e.cd=ENGAGE.cd;
+          if(Math.random()<ENGAGE.chance && tryToken(e)){ e.state='press'; e.stateT=rand(...e.aggr); }
+        }
+      }
     }
   }
   else if(e.state==='press'){                          // committed: close and hit
-    if(dist>reach+0.05){ move.copy(dirP); }
+    if(dist>reach+0.05){ move.copy(dirP); spd=ENEMY_CHASE; }
     else { beginEnemyAttack(e,wantYaw); }
-    if(e.stateT<=0 && !e.attack){ if(e.hasToken){e.hasToken=false;tokensUsed--;} e.state='engage'; e.stateT=rand(0.3,0.7); }
+    // the press holds while the player is inside the band -- chasing a fleeing
+    // player needs longer than a fixed stateT, so only break off if they truly
+    // outran us past the deaggro range (the escape signal; the hold branch
+    // takes over from engage) or the attack already resolved.
+    if(e.stateT<=0 && !e.attack && dist>deaggro){ if(e.hasToken){e.hasToken=false;tokensUsed--;} e.state='engage'; e.stateT=rand(0.3,0.7); }
   }
   else if(e.state==='attacking'){ /* driven by attack integrate */ }
+  else if(e.state==='hold'){                           // deaggro break-off: drift home, re-engage on the trigger
+    if(dist < aggro){ e.state='engage'; e.stateT=0.3; }
+    else { const dx=e.home.x-e.pos.x, dz=e.home.z-e.pos.z, dh=Math.hypot(dx,dz);
+      if(dh>1.2){ move.set(dx/dh,0,dz/dh); wantYaw=Math.atan2(dx,dz); spd=e.spd*0.55; } }
+  }
   else if(e.state==='recover'){                         // brief pull-back after swinging
     move.copy(dirP).multiplyScalar(-0.35).addScaledVector(_tang, e.circleDir*0.7);
     if(e.stateT<=0){ if(e.hasToken){ e.hasToken=false; tokensUsed--; } e.state='engage'; e.stateT=rand(0.25,0.6); }
@@ -3556,8 +3760,8 @@ function updateEnemy(e, dt){
   // integrate
   if(!e.attack){
     if(move.lengthSq()>1) move.normalize();
-    e.vel.x=damp(e.vel.x, move.x*e.spd, 8, dt);   // 8 (was 14): mobs carry momentum too
-    e.vel.z=damp(e.vel.z, move.z*e.spd, 8, dt);
+    e.vel.x=damp(e.vel.x, move.x*spd, 8, dt);   // 8 (was 14): mobs carry momentum too
+    e.vel.z=damp(e.vel.z, move.z*spd, 8, dt);
   } else {
     // STEP INTO IT: the mob commits its weight forward through the strike too
     const lv=attackDrive(e), fx=Math.sin(e.facing), fz=Math.cos(e.facing);
@@ -3573,7 +3777,7 @@ function updateEnemy(e, dt){
     e.facing=angLerp(e.facing, A.aim, Math.min(1,dt*12));
     // (the step-into-it lunge is driven by attackDrive() in the velocity integrate above)
     if(!A.hit&&A.t>=A.hitAt){ A.hit=true; syncEnemyMesh(e,dt,e.facing); resolveHit(e,false); }
-    if(A.t>=A.dur){ e.attack=null; e.state='recover'; e.stateT=WEAPONS[e.wpn].rec+rand(0.2,0.6); }
+    if(A.t>=A.dur){ e.attack=null; e.state='recover'; e.stateT=WEAPONS[e.wpn].rec; e.cd=ENGAGE.cd; }  // recover is anim-only now; the TWW 35f cooldown (e.cd) gates the NEXT attack
   } else {
     e.speed=Math.hypot(e.vel.x,e.vel.z); e.movePhase+=dt*e.speed*2.4;
     e.facing=angLerp(e.facing, wantYaw, Math.min(1,dt*6));
@@ -3582,8 +3786,8 @@ function updateEnemy(e, dt){
 }
 function tryToken(e){ if(e.hasToken)return true; if(tokensUsed<ATTACK_TOKENS){ tokensUsed++; e.hasToken=true; return true; } return false; }
 let grabCD=0;
-function nearestFreePickup(e){ let best=null,bd=99; for(const p of PICKUPS){ if(p.taken||p.planted)continue; const d=Math.hypot(p.x-e.pos.x,p.z-e.pos.z); if(d<bd){bd=d;best=p;} } return best; }
-function equipEnemy(e,key){ e.wpn=key; e.dur=WEAPONS[key].dur; equip(e.chef,key); e.standoff=WEAPONS[key].reach+rand(0.25,0.7); if(AC)sfx.pickup(); }
+function nearestFreePickup(e){ let best=null,bd=99; for(const p of PICKUPS){ if(p.taken||p.planted||p.supply)continue; const d=Math.hypot(p.x-e.pos.x,p.z-e.pos.z); if(d<bd){bd=d;best=p;} } return best; }
+function equipEnemy(e,key){ e.wpn=key; e.dur=WEAPONS[key].dur; equip(e.chef,key); if(AC)sfx.pickup(); }
 function startGrab(e){
   if(player.grabbed||player.dead||player.iframe>0||grabCD>0) return;
   player.grabbed={ by:e, mash:0, need:(e.kind==='tough'?8:5), t:0, max:2.6, dmgT:0.4 };
@@ -3796,6 +4000,7 @@ function poseChef(a, isPlayer, dt){
   if(moving) waist += Math.sin(ph*2)*0.035*Math.min(1,spd/4);  // stride undulation
   if(atk){ waist += lerp(0,-0.10,atk.windK); waist = lerp(waist, (atk.A.shape?atk.A.shape.lean:0.28)*atk.heavyMul*0.75, atk.strikeK); }
   if(a.tackle){ waist += 0.5; }                          // shoulder-down charge
+  if(!atk && (a._combatK||0)>0.6 && a.wpn==='nonstick') waist += 0.09*(1-Math.min(1,spd/3));   // pan ready: weight forward (Link stance)
   u.spine.rotation.x = damp(u.spine.rotation.x, waist, 16, dt);
   u.abMesh.rotation.x = damp(u.abMesh.rotation.x, -waist*0.22, 11, dt);   // belly counter-curves (an S-spine)
 
@@ -3862,6 +4067,13 @@ const _ideal=new V3();
 function updateFeet(a, dt, moving){
   const legs=a.chef.userData.legs;
   const air=a._air||0;
+  if(a.ledge){    // LEDGE HANG: feet dangle straight down off the edge (no stepping)
+    for(let i=0;i<2;i++){ const L=legs[i], st=STANCE[i];
+      toGround(a, st.x*0.8, st.z*0.8, L.world);
+      L.world.y=0.06 + Math.sin(GAME.t*1.6+i)*0.03; L.stepT=1; L.lift=0; }
+    a._swayTarget=0; a._stepDip=0; a._flight=-1;
+    return;
+  }
   if(air>0.08){   // AIRBORNE: no stepping -- tuck the feet up on a jump, extend them down for a slam stomp
     const sm = a.slam?0.3:0.6;                       // slam: feet gather TOGETHER (trailing), jump: normal stance
     for(let i=0;i<2;i++){ const L=legs[i], st=STANCE[i];
@@ -4070,7 +4282,7 @@ function solveArmsIK(a, dt, atk){
     // boxer); two-handers bring the off-hand onto the weapon. All sign-relative so a
     // lefty mirrors for free.
     const ck = combatK * (twoH?1:(1-Math.min(run,0.8))) * (1-g);   // two-hander keeps the grip strong while running
-    if(ck>0.01 && !atk && !a.slam && (a.slamHit||0)<=0 && a.state!=='holding' && a.state!=='held' && !a.tackle){
+    if(ck>0.01 && !atk && !a.slam && (a.slamHit||0)<=0 && a.state!=='holding' && a.state!=='held' && !a.tackle && !a.ledge){
       const WH=(u.whand==null?1:u.whand), isWH=(i===WH), wk=a.wpn;
       let sx=tx, sy=ty, sz=tz;
       if(wk==='castiron'){                                   // GREATSWORD (two-handed, low)
@@ -4080,8 +4292,10 @@ function solveArmsIK(a, dt, atk){
       } else if(wk==='knife'){                               // DAGGER
         if(u.grip==='reverse'){ if(isWH){ sx=A.sh.x*0.7; sy=1.02; sz=0.20; } else { sx=A.sh.x*0.55; sy=1.34; sz=0.50; } }   // icepick: WH tucked
         else { if(isWH){ sx=A.sh.x*0.55; sy=1.16; sz=0.56; } else { sx=A.sh.x*0.6; sy=1.34; sz=0.48; } }                    // forward: checking off-hand
-      } else if(wk==='spatula'||wk==='nonstick'){            // SHORT SWORD (one-handed)
+      } else if(wk==='spatula'){                             // SHORT SWORD (one-handed)
         if(isWH){ sx=A.sh.x*0.7; sy=1.24; sz=0.54; } else { sx=A.sh.x*1.0; sy=1.08; sz=0.22; }
+      } else if(wk==='nonstick'){                            // PAN = LINK SWORD GRIP: both hands on the handle,
+        if(isWH){ sx=A.sh.x*0.32; sy=1.30; sz=0.74; } else { sx=A.sh.x*0.14; sy=1.22; sz=0.60; }   // weapon presented forward, rooted ready
       } else if(wk==='potlid'){                              // SHIELD (lid up front)
         if(isWH){ sx=A.sh.x*0.4; sy=1.40; sz=0.50; } else { sx=A.sh.x*1.05; sy=1.06; sz=0.18; }
       } else {                                               // FISTS -> boxer guard
@@ -4089,6 +4303,7 @@ function solveArmsIK(a, dt, atk){
       }
       tx=lerp(tx,sx,ck); ty=lerp(ty,sy,ck); tz=lerp(tz,sz,ck);
     }
+    if(a.ledge){ tx=A.sh.x*0.55; ty=2.05; tz=0.30; }   // LEDGE HANG (WW): both hands up on the edge
     if(g>0.02){ tx=lerp(tx, sign*0.17, g); ty=lerp(ty,1.62,g); tz=lerp(tz,0.36,g); }
     if(atk){
       const A2=atk.A, windK=atk.windK, strikeK=atk.strikeK, side=A2.side;
@@ -4128,7 +4343,9 @@ function solveArmsIK(a, dt, atk){
     A.tgt.x=damp(A.tgt.x,tx,rate,dt); A.tgt.y=damp(A.tgt.y,ty,rate,dt); A.tgt.z=damp(A.tgt.z,tz,rate,dt);
     if(a.slam){ _bnd2.set(sign*0.95, 0.5, -0.55); }                // overhead cock: elbows splay out and back into a wide V
     else if((a.slamHit||0)>0){ _bnd2.set(sign*0.5,-1,0.5); }       // hammer: elbows drive down
-    else if(atk && isActive && !(atk.thrust&&!isFist) && atk.A.shape){ const bd=atk.A.shape.bend; _bnd2.set(bd[0],bd[1],bd[2]); }
+    else if(atk && isActive && !(atk.thrust&&!isFist) && atk.A.shape){ const bd=atk.A.shape.bend;
+      if(atk.A.chainCut){ if(!a._bendD) a._bendD=_bnd2.clone(); a._bendD.lerp(_bnd2, 1-Math.exp(-16*dt)); _bnd2.set(a._bendD.x, a._bendD.y, a._bendD.z); }   // damp the elbow pole across decomp chain cuts (no pose pop)
+      else _bnd2.set(bd[0],bd[1],bd[2]); }
     else if(run>0.3 && !atk){ _bnd2.set(sign*0.5,-0.65,-0.9); }   // elbows bent back, runner's form
     else _bnd2.set(sign*0.6,-1,0.5);       // elbows break down and away from the ribs
     solveTwoBone(A.up, A.fore, A.sh, A.tgt, ARM_U, ARM_F, _bnd2, A.elb);
@@ -4364,13 +4581,26 @@ function updatePrompt(){
     if(d<bd){ bd=d; nearPickup=p; } }
   const el=document.getElementById('prompt');
   if(nearPickup && GAME.mode==='play'){
-    el.classList.add('on');
-    el.innerHTML='<span class="k">GRAB</span><span class="k">F</span> pick up <b>'+WEAPONS[nearPickup.key].name.toUpperCase()+'</b>';
+    if(nearPickup.supply){
+      // supplies sit ON the shelves: only reachable when your hand is at their
+      // height (the vertical economy — top-shelf stock needs a climb or a hang)
+      const handY=player.pos.y+Engine.move.LEDGE_HAND_Y;
+      const ok=Math.abs(handY-nearPickup.y)<=Engine.move.LEDGE_REACH*1.9;
+      if(ok){
+        const a=nearPickup.family || STORE_AISLES[nearPickup.aisle];
+        el.classList.add('on');
+        el.innerHTML='<span class="k">GRAB</span><span class="k">F</span> take <b>'+a.name+'</b> <span style="color:#8be27a">$'+nearPickup.value+'</span>';
+      } else el.classList.remove('on');
+    } else {
+      el.classList.add('on');
+      el.innerHTML='<span class="k">GRAB</span><span class="k">F</span> pick up <b>'+WEAPONS[nearPickup.key].name.toUpperCase()+'</b>';
+    }
   } else el.classList.remove('on');
 }
 function tryPickup(){
   if(!nearPickup) return;
   const p=nearPickup;
+  if(p.supply){ takeSupply(p); return; }   // GROCERY STORE: a supply, not a weapon
   // drop current weapon back as a pickup if it isn't fists and has life
   if(player.wpn!=='fists' && player.dur>0 && player.dur!==Infinity){
     spawnPickup(player.wpn, player.pos.x - Math.sin(player.facing)*0.6, player.pos.z - Math.cos(player.facing)*0.6);
@@ -4379,6 +4609,24 @@ function tryPickup(){
   p.taken=true; scene.remove(p.g);
   sfx.pickup(); updateHUDWeapon(); toast(pick(['Armed with ','Now wielding ','Upgraded to '])+WEAPONS[p.key].name.toUpperCase());
   const hpos=player.pos.clone(); hpos.y=1.3; ring(hpos,COL.herb,1.2); burst(hpos,8,COL.herb,0.8);
+}
+/* take a grocery supply into the run: value banks to STORE.cash, the count
+   feeds the end-of-run stock -> shop-economy loop. Hand-reach gate so only
+   supplies your hand is actually AT can be grabbed (the vertical shelf game). */
+function takeSupply(p){
+  if(p.taken) return;
+  const handY=player.pos.y+Engine.move.LEDGE_HAND_Y;
+  if(Math.abs(handY-p.y) > Engine.move.LEDGE_REACH*1.9) return;
+  p.taken=true; scene.remove(p.g);
+  // bank into whichever run is live: the grocery run (SRUN) keeps its exact
+  // path; locale runs (LRUN) read the pickup's own family/kind instead.
+  if(GAME.store){ SRUN.cash+=p.value; SRUN.collected++; SRUN.byAisle[p.aisle]=(SRUN.byAisle[p.aisle]||0)+1; }
+  else if(GAME.locale && LRUN.on){ LRUN.cash+=p.value; LRUN.collected++; LRUN.byKind[p.kind]=(LRUN.byKind[p.kind]||0)+1; }
+  sfx.pickup();
+  if(GAME.store) updateStoreHUD(); else if(GAME.locale) updateLocaleHUD(PLAY_LOCALES[GAME.locale]);
+  const fam=p.family || STORE_AISLES[p.aisle];
+  toast('+$'+p.value+' '+fam.name.toUpperCase());
+  const sp=new V3(p.x,p.y+0.5,p.z); ring(sp,fam.tint,1.0); burst(sp,8,fam.tint,0.8);
 }
 
 /* ================================================================ LOCK-ON */
@@ -4448,14 +4696,19 @@ const PARRY_WINDOW=0.2;   // seconds after a fresh guard tap that an incoming hi
 // ---- DRUNK MECHANIC: chug at the bar (GRAB) to climb the ladder. The drunker you
 // are, the harder you hit -- but the room swims (camera + pose sway) and your feet
 // wander (movement drift). player._drunk is the 0..1 source of truth every drunk
-// visual/feel reads (ported from the 2D game's wastedAmt). ----
+// visual/feel reads (ported from the 2D game's wastedAmt).
+// NOTE (owner, 2026-08-04): DISABLED via DRUNK_ENABLED below -- the mechanic is
+// inert (no chug, _drunk pinned 0, no drunk state transitions) but the code is
+// kept intact for a future revival. ----
 const DRINK_BUZZ_AT=2, DRINK_WASTED_AT=4, WASTED_TIME=28, DRINK_CD=0.7, DRINK_ANIM_TIME=0.7;   // 28s wasted window (doubled)
+const DRUNK_ENABLED=false;   // DRUNK OFF (owner, 2026-08-04): guards chugDrink/updateDrunk + the dev button; _drunk stays 0 so every drunk read (drift, sway, camera swim, shader, CSS overlay, dmg) is inert
 // generous zone in FRONT of the bar so you don't have to hunt for the exact spot --
 // but not SO generous it reaches into the kitchen-side combat space (the old +3.0
 // front reach covered the whole back-wall cook line, so GRAB fallback-chugged with
 // nobody around and no bar in sight; +1.6 still forgives a step or two of miss).
 function atBar(P){ return Math.abs(P.pos.x-BAR.x)<BAR.w/2+1.4 && Math.abs(P.pos.z-BAR.z)<BAR.d/2+1.6; }
 function chugDrink(P){
+  if(!DRUNK_ENABLED) return;              // DRUNK OFF: chugging is inert (see DRUNK_ENABLED)
   if((P.drinkCD||0)>0) return;
   P.drinks=(P.drinks||0)+1; P.wastedT=WASTED_TIME; P.drinkCD=DRINK_CD; P._drinkT=DRINK_ANIM_TIME; P._sq=Math.max(P._sq||0,0.18);
   const hp=P.pos.clone(); hp.y=1.65;
@@ -4465,6 +4718,7 @@ function chugDrink(P){
   const r=P.pos.clone(); r.y=0.06; ring(r,0xffd23d,0.6); if(AC) sfx.pickup(); haptic(0.4,0.3,60);
 }
 function updateDrunk(P,dt){
+  if(!DRUNK_ENABLED){ P._drunk=0; return; }   // DRUNK OFF: meter pinned 0, no ladder transitions (see DRUNK_ENABLED)
   if(P.drinkCD>0) P.drinkCD-=dt;
   if(P._drinkT>0) P._drinkT-=dt;                                 // drinking-animation clock
   if(P.wastedT>0){ P.wastedT-=dt; if(P.wastedT<=0){ P.wastedT=0; P.drinks=0; } }   // the window lapses -> sober up
@@ -4753,7 +5007,9 @@ function playerDown(){
   impactFrames(4, 0xff3b30, 0x140c07); hitPost(0.9, 0xff3b30);
   buildRagdoll(player); if(player.rag) ragImpulse(player, _rp1.set(-Math.sin(player.facing),0.2,-Math.cos(player.facing)).normalize(), 1.1);
   const p=player.pos.clone(); p.y=1.2; popWord(p,"86'D",'#ff3b30',46);
-  setTimeout(()=>endNight(false),900);
+  setTimeout(()=>{ if(GAME.store){ storeEnd(false); }
+    else if(GAME.locale){ const L=PLAY_LOCALES[GAME.locale]; if(L) localeEnd(L,false); else endNight(false); }
+    else { endNight(false); } },900);
 }
 
 /* ================================================================ HUD */
@@ -4872,6 +5128,570 @@ function maybeSpawnWave(){
   startNextWave();
 }
 
+/* ============================================================ GROCERY STORE
+   The grocery-store level — a separate run loop in the same arena. The shop:
+   climbable shelf AISLES (the WW ledge mechanic), supplies per aisle (the pickup
+   economy, on the shelf boards), hostile shoppers (the engagement AI), and the
+   rogue-lite loop (Overcooked AYCE reference): collect supplies each run -> the
+   takings bank to RUN.bank + the count banks to RUN.stock -> the back-office
+   SHOP economy spends both next run. Reuses the day/night + so_run economy. */
+const STORE_AISLES=[
+  { name:'PRODUCE', tint:0x8fc866, tier:1 },
+  { name:'DAIRY',   tint:0x2de2e6, tier:1 },
+  { name:'BAKERY',  tint:0xe8b36a, tier:2 },
+  { name:'FROZEN',  tint:0x7fb2d6, tier:2 },
+  { name:'PREMIUM', tint:0xff2fb0, tier:3 },
+];
+const STORE_TIER_VALUE=[8, 22, 55];            // per-supply $ by tier (day-scaled at spawn)
+const SRUN={ on:false, t:0, dur:90, cash:0, collected:0, total:0, byAisle:{}, _warn:99, ended:false };   // the live store-run state
+let storeGrp=null, storeObstSave=null, storeObstList=null;
+const storeShelfBody=new THREE.MeshStandardMaterial({color:0x46526e,roughness:.82,flatShading:true});
+const storeShelfBoard=new THREE.MeshStandardMaterial({color:0xcdd6e4,roughness:.75,flatShading:true});
+const storeShelfEnd=new THREE.MeshStandardMaterial({color:0xff2fb0,roughness:.6,emissive:0xff2fb0,emissiveIntensity:0.5,flatShading:true});
+
+/* The floor plan — pure data so the sim can verify it without a renderer.
+   { x, z, h } with h = top height (grabbable: 1.4 mid, 2.4 tall). */
+function storeLayout(){
+  const units=[];
+  const midZ=[-4.2, 3.4], xs=[-12.6,-9,-5.4,-1.8,1.8,5.4,9,12.6];
+  for(const z of midZ) for(const x of xs) units.push({ x, z, h:1.4 });      // two mid aisles
+  const backXs=[-12.6,-9,-5.4,-1.8,1.8,5.4,9,12.6];
+  for(const x of backXs) units.push({ x, z:-HALFD+1.7, h:2.4 });            // tall back wall of shelves
+  for(const x of [-7.2,-3.6,3.6,7.2]) units.push({ x, z:HALFD-2.6, h:1.0 }); // low front shelves (entrance gap at x=0)
+  units.push({ x:-14.4, z:-4.2, h:2.4 }, { x:14.4, z:-4.2, h:2.4 });        // tall end caps
+  units.push({ x:0, z:-HALFD+4.2, h:2.4 });                                 // a center PREMIUM island
+  return units;
+}
+/* Supplies per aisle on the shelf boards: y is the board height, tier drives the
+   value. Low boards are floor-reachable (hand 1.15); the tall tops need a climb
+   or a hang — the vertical economy. Pure data (sim-verified). */
+function storeSupplySpots(){
+  const spots=[];
+  const midAisleBoards=[[0.95,1],[1.45,2]];
+  for(const zi in [0,1]){
+    const z=[-4.2,3.4][zi];
+    for(const xi in [0,1,2,3,4,5,6,7]){
+      const x=-12.6+xi*3.6;
+      const aisle=((+zi)*3+(+xi))%STORE_AISLES.length;   // row+col -> aisle (always 0..4)
+      for(const [y,tier] of midAisleBoards){
+        const off=(Math.abs(x)%2.6-1.3)*0.35;             // nudge off the unit's center line
+        spots.push({ aisle, x:x+off, z:z+0.28, y, tier });
+        spots.push({ aisle:(aisle+1)%STORE_AISLES.length, x:x+off, z:z-0.12, y:y+0.05, tier });
+      }
+    }
+  }
+  return spots;
+}
+/* one shelf unit's geometry (visual only — collision lives in OBST via storeObst) */
+function shelfUnit(x,z,h){
+  const g=new THREE.Group(); g.position.set(x,0,z); storeGrp.add(g);
+  const W=2.6, D=0.9;
+  const boards = h>1.8 ? [0.62,1.28,1.94,h-0.06] : (h>1.1 ? [0.55,1.18,h-0.06] : [0.55,h-0.06]);
+  for(const by of boards){
+    const b=new THREE.Mesh(new THREE.BoxGeometry(W,0.07,D),storeShelfBoard);
+    b.position.y=by; b.castShadow=b.receiveShadow=true; g.add(b);
+  }
+  for(const sx of [-W/2+0.12,W/2-0.12]){
+    const up=new THREE.Mesh(new THREE.BoxGeometry(0.1,h,D+0.12),storeShelfBody);
+    up.position.set(sx,h/2,0); up.castShadow=true; g.add(up);
+  }
+  const end=new THREE.Mesh(new THREE.BoxGeometry(0.06,h,D+0.14),storeShelfEnd);
+  end.position.set(-W/2-0.05,h/2,0); g.add(end);
+  return { x, z, rx:W/2+0.12, rz:D/2+0.12, top:h };
+}
+/* place a supply crate pickup (glowing box, aisle tint) — same PICKUPS economy
+   as the weapon larder, tagged `supply` so weapons/steals never touch it. */
+function spawnSupply(aisleIdx,x,z,y){
+  const g=new THREE.Group();
+  const a=STORE_AISLES[aisleIdx];
+  const box=new THREE.Mesh(new THREE.BoxGeometry(0.42,0.34,0.42),
+    new THREE.MeshStandardMaterial({color:a.tint,roughness:.55,metalness:.15,emissive:a.tint,emissiveIntensity:.28,flatShading:true}));
+  box.position.y=0.17; box.castShadow=true; g.add(box);
+  const band=new THREE.Mesh(new THREE.BoxGeometry(0.46,0.08,0.46),
+    new THREE.MeshStandardMaterial({color:0x241c10,roughness:.8,flatShading:true}));
+  band.position.y=0.24; g.add(band);
+  const disc=new THREE.Mesh(new THREE.CircleGeometry(0.4,20),
+    new THREE.MeshBasicMaterial({color:a.tint,transparent:true,opacity:0.3,depthWrite:false}));
+  disc.rotation.x=-Math.PI/2; disc.position.y=0.02; g.add(disc);
+  g.position.set(x,y,z); scene.add(g);
+  const value=Math.round(STORE_TIER_VALUE[a.tier-1]*(1+0.1*(RUN.day-1)));
+  const p={ g, key:'supply', supply:true, aisle:aisleIdx, value, x, z, y, disc, taken:false, y0:y };
+  PICKUPS.push(p); SRUN.total++;
+  return p;
+}
+/* build (once) + show the store decor: shelf aisles as OBST (climbable via the
+   ledge mechanic) and the nightclub furniture hidden + its collision removed. */
+function buildStoreDecor(){
+  if(!storeGrp){
+    storeGrp=new THREE.Group(); arena.add(storeGrp); arena.userData.storeG=storeGrp;
+    storeObstList=[];
+    for(const u of storeLayout()){
+      const o=shelfUnit(u.x,u.z,u.h); o._store=true; storeObstList.push(o);
+    }
+  }
+  if(storeObstList) for(const o of storeObstList) if(OBST.indexOf(o)<0) OBST.push(o);   // tearDown removed them — re-add
+  storeGrp.visible=true;
+  hideBaseFurniture();                                  // the night's fixtures are gone (shared venue swap)
+  if(!storeObstSave) storeObstSave=pullNightObst();
+}
+function tearDownStore(){
+  if(storeGrp) storeGrp.visible=false;
+  for(let i=PICKUPS.length-1;i>=0;i--){ const p=PICKUPS[i];
+    if(p.taken||p.supply){ scene.remove(p.g); PICKUPS.splice(i,1); } }
+  for(let i=OBST.length-1;i>=0;i--){ if(OBST[i]._store) OBST.splice(i,1); }
+  if(storeObstSave){ pushNightObst(storeObstSave); storeObstSave=null; }
+  restoreBaseFurniture();                               // the night's furniture is back (shared venue swap)
+}
+function seedStoreSupplies(){
+  const spots=storeSupplySpots();
+  for(const s of spots) spawnSupply(s.aisle, s.x, s.z, s.y);
+}
+function updateStoreHUD(){
+  if(!SRUN.on) return;
+  const el=document.getElementById('storehud'); if(!el) return;
+  el.classList.add('on');
+  const t=document.getElementById('storeT'); if(t) t.textContent=Math.ceil(SRUN.t)+'s';
+  const n=document.getElementById('storeN'); if(n) n.textContent='$'+SRUN.cash;
+  const l=document.getElementById('storeL'); if(l) l.textContent='STOCK '+SRUN.collected+'/'+SRUN.total;
+}
+/* startStore() — the rogue-lite store run: shelves + supplies + shopper mob
+   (the engagement AI), a 90s clock. Ends on the clock, on a full stockout, or
+   on the floor (playerDown routes here). */
+function startStore(){
+  for(const e of enemies) scene.remove(e.chef); enemies.length=0;
+  for(const p of PICKUPS) scene.remove(p.g); PICKUPS.length=0;
+  tokensUsed=0; ended=false;
+  GAME.kills=0; GAME.combo=0; GAME.maxCombo=0; GAME.hitsLanded=0;
+  GAME.store=SRUN;
+  SRUN.on=true; SRUN.t=SRUN.dur; SRUN.cash=0; SRUN.collected=0; SRUN.total=0;
+  SRUN.byAisle={}; SRUN._warn=99; SRUN.ended=false;
+  if(typeof dayScene==='function') dayScene(false);
+  document.body.classList.remove("cookmode");
+  NIGHT_ROSTER=null;
+  if(!player){ player=makePlayer(); attachPlayerHelpers(player); }
+  player.hpMax=150+30*upLvl('brawn');
+  player.pos.set(0,0,6.5); player.vel.set(0,0,0); player.facing=Math.PI; player.hp=player.hpMax; player._feet=false;
+  player.wpn='fists'; player.dur=Infinity; equip(player.chef,'fists');
+  player.dead=false; player.attack=null; player.dodge=null; player.lockOn=null;
+  player.comboTarget=null; player.bufferedHeavy=null; player.bufferT=0;
+  player.drinks=0; player.wastedT=0; player.drinkCD=0; player._drunk=0;
+  player.grabbed=null; hideMashUI(); grabCD=0; player.tackle=null; player.tackleCD=0;
+  player.hold=null; player.grabCD=0; player.steal=null; player.slam=null; player.vy=0; player.pos.y=0;
+  player.ledge=null; player.ledgeCD=0; player._fallFrom=0;
+  resetRagPose(player); player._feet=null; player.vel.set(0,0,0);
+  CAM.yaw=Math.PI; CAM.lockK=0;
+  buildStoreDecor();
+  seedStoreSupplies();
+  const count=6+Math.min(6, RUN.day);                     // shoppers scale with the run
+  const list=[]; for(let i=0;i<count;i++) list.push(Math.random()<0.22?'tough':'weak');
+  WAVE.chunks=chunkWaves(list); WAVE.wave=0; WAVE.resting=false; WAVE.done=false; WAVE.winT=0;
+  WAVE.queue=WAVE.chunks[0]; WAVE.total=WAVE.queue.length; WAVE.spawned=0; WAVE.waveDone=false; WAVE.pending=0;
+  spawnWaveChunk(400);
+  updateHUDCooks(0); updateHUDWave();
+  updateHUDHealth(); updateHUDWeapon();
+  GAME.mode='play'; GAME.paused=false;
+  { const pe=document.getElementById('pause'); if(pe) pe.classList.remove('on'); if(master){ try{ master.gain.value=0.5; }catch(e){} } }
+  document.getElementById('hud').classList.add('on');
+  if(TOUCHCAP){ touchEl.classList.add('on'); if(bPause) bPause.classList.add('on'); }
+  document.getElementById('veil').classList.add('hide');
+  document.getElementById('hint').classList.add('on');
+  updateStoreHUD();
+  toast('GROCERY RUN — STOCK THE PANTRY. '+SRUN.dur+'s.');
+}
+/* storeEnd(survived) — close the loop: supplies -> RUN.bank (the shop economy)
+   + RUN.stock (the back-office tally), advance the day, draw the morning card. */
+function storeEnd(survived){
+  if(SRUN.ended) return; SRUN.ended=true;
+  GAME.mode='over';
+  const cash=SRUN.cash, collected=SRUN.collected, total=SRUN.total;
+  tearDownStore();
+  SRUN.on=false; GAME.store=null;
+  document.getElementById('hint').classList.remove('on');
+  RUN.bank+=cash; RUN.stock=(RUN.stock||0)+collected;
+  RUN.day++;
+  saveRun();
+  showStoreEnd({ survived, cash, collected, total });
+}
+function showStoreEnd(res){
+  const c=document.getElementById('card');
+  document.getElementById('veil').classList.remove('hide');
+  document.getElementById('hud').classList.remove('on');
+  document.getElementById('storehud').classList.remove('on');
+  touchEl.classList.remove('on'); if(bPause) bPause.classList.remove('on');
+  GAME.paused=false; { const pe=document.getElementById('pause'); if(pe) pe.classList.remove('on'); }
+  c.innerHTML='<div class="card end '+(res.survived?'win':'lose')+'">'+
+    '<div class="kick">'+(res.survived?'STOCK TAKEN · CLOSING TIME':'THE SHOPPERS WON THIS ROUND')+'</div>'+
+    '<div class="title">'+(res.survived?'PANTRY<br><span class="b">STOCKED</span>':'86\u2019D AT<br><span class="b">THE REGISTER</span>')+'</div>'+
+    '<div class="stat">Stocked <b>'+res.collected+'/'+res.total+'</b> &nbsp;·&nbsp; Takings <b>$'+res.cash+'</b>'+
+    '<br>Bank <b>$'+RUN.bank+'</b> &nbsp;·&nbsp; Pantry stock <b>'+(RUN.stock||0)+'</b> — spends in the back office'+
+    '<br><span style="color:#7f6ab0">Jump at a shelf edge to grab it; <b>up</b> climbs, <b>jump</b> drops. Top-shelf stock needs the climb.</span></div>'+
+    '<button class="btn" id="againStoreBtn">'+(res.survived?'NEXT RUN — DAY '+RUN.day:'BACK ON THE SHOPPING CART')+'</button>'+
+    '<button class="btn" id="quitStoreBtn" style="margin-top:10px;background:#2a2018;color:var(--cream)">BACK TO TITLE</button></div>';
+  document.getElementById('againStoreBtn').onclick=()=>{ goFullscreen(); GAME.inRun=true; startStore(); };
+  document.getElementById('quitStoreBtn').onclick=()=>{ GAME.inRun=false; showTitle(); };
+}
+
+/* ============================================================ LOCALE SYSTEM
+   Every playable venue is one entry in PLAY_LOCALES with the same shape:
+   pure-data layout + supply spots (sim-verifiable without a renderer), a
+   builder that turns the layout into visuals + OBST colliders, a teardown
+   that restores the base terrace, a hostile mob, a clock, and the rogue-lite
+   end (takings -> RUN.bank, stock -> RUN.stock). The kitchen (startNight) and
+   the grocery store (startStore) keep their own flows — the registry WRAPS
+   them — and the new city street + ocean front run on the same generalized
+   flow (startLocaleRun). */
+let LRUN={ on:false, t:0, dur:90, cash:0, collected:0, total:0, byKind:{}, _warn:99, ended:false };   // the live locale-run state (city/ocean; the grocery keeps SRUN)
+
+/* the venue runs take the after-hours restaurant fixtures down (the liquor
+   bar, the pergola, the palms, the pass) and put them back at teardown; the
+   `night:true` obstacles come out of OBST for the duration and return after.
+   Extracted from the grocery store's decor swap so every venue shares ONE
+   version (buildStoreDecor/tearDownStore call these too). */
+function hideBaseFurniture(){
+  const bg=arena.userData.barG; if(bg) bg.visible=false;
+  const pg=arena.userData.pergola; if(pg) for(const m of pg) m.visible=false;
+  const pl=arena.userData.palmsG; if(pl) for(const m of pl) m.visible=false;
+  const p2=arena.userData.passG; if(p2) p2.visible=false;
+}
+function restoreBaseFurniture(){
+  const bg=arena.userData.barG; if(bg) bg.visible=true;
+  const pg=arena.userData.pergola; if(pg) for(const m of pg) m.visible=true;
+  const pl=arena.userData.palmsG; if(pl) for(const m of pl) m.visible=true;
+  const p2=arena.userData.passG; if(p2) p2.visible=true;
+}
+function pullNightObst(){ const save=[]; for(let i=OBST.length-1;i>=0;i--){ if(OBST[i].night) save.push(OBST.splice(i,1)[0]); } return save; }
+function pushNightObst(save){ if(save) for(const o of save) OBST.push(o); }
+/* point the sky + world extras at the run's own world (the vaporwave skyline
+   for the city street, the bay for the ocean front); dayScene() retakes
+   currentLocale() on the next day transition. */
+function setRunAmbient(localeKey){
+  if(typeof buildSky!=='function') return;
+  try{ buildSky(localeKey, false); }catch(e){ /* baked asset missing — the extras groups still toggle */ }
+}
+
+/* ---- CITY STREET ---------------------------------------------------------
+   The vaporwave city (buildCityExtras' skyline/highway ring) as a PLAYABLE
+   street: a neon kiosk wall up the back, food-cart stalls in a zigzag lane,
+   curb crates at the front, corner billboards — each stall a grabbable OBST
+   unit with supplies on the boards (the vertical economy: cart counter stock
+   is floor-reachable, kiosk top stock needs a hang off the 2.4 top). The
+   hostile CROWD is the city's own weak/tough mob, thicker and meaner than
+   the shoppers. Takings = street food; stock = the block fed. */
+const CITY_FAMILIES=[
+  { name:'NOODLE',   tint:0xff8a3a, tier:1 },
+  { name:'TACO',     tint:0x8be27a, tier:1 },
+  { name:'BURRITO',  tint:0xff2fb0, tier:2 },
+  { name:'RAMEN',    tint:0x2de2e6, tier:2 },
+  { name:'GOLDEN BAO',tint:0xffd98a, tier:3 },
+];
+const CITY_TIER_VALUE=[8,22,55];
+function cityLayout(){
+  const units=[];
+  for(const x of [-12.6,-9,-5.4,-1.8,1.8,5.4,9,12.6]) units.push({x,z:-HALFD+1.7,h:2.4});   // neon kiosk wall (tall — hang for the top stock)
+  for(const x of [-10.8,-3.6,3.6,10.8]) units.push({x,z:-1.8,h:1.4});                        // food carts, near lane
+  for(const x of [-7.2,0,7.2]) units.push({x,z:1.8,h:1.4});                                  // food carts, far lane (the zigzag street)
+  for(const x of [-7.2,-3.6,3.6,7.2]) units.push({x,z:HALFD-2.6,h:1.0});                     // curb crates (low)
+  units.push({x:-14.4,z:0,h:2.4},{x:14.4,z:0,h:2.4});                                        // corner billboards (tall)
+  return units;
+}
+function citySupplySpots(){
+  const spots=[]; let n=0;
+  for(const x of [-12.6,-9,-5.4,-1.8,1.8,5.4,9,12.6]) spots.push({ kind:n++%5, x, z:-HALFD+1.7, y:2.32 });   // kiosk tops — hang to pluck
+  for(const x of [-10.8,-3.6,3.6,10.8]){ spots.push({ kind:n++%5, x:x+0.3, z:-1.8+0.28, y:1.25 }); spots.push({ kind:n++%5, x:x-0.3, z:-1.8-0.12, y:1.3 }); }
+  for(const x of [-7.2,0,7.2]){ spots.push({ kind:n++%5, x:x+0.3, z:1.8+0.28, y:1.25 }); spots.push({ kind:n++%5, x:x-0.3, z:1.8-0.12, y:1.3 }); }
+  for(const x of [-7.2,-3.6,3.6,7.2]) spots.push({ kind:n++%5, x, z:HALFD-2.6, y:0.55 });                    // curb crates — low reach
+  spots.push({ kind:n++%5, x:-14.4, z:0, y:2.32 }); spots.push({ kind:n++%5, x:14.4, z:0, y:2.32 });
+  return spots;
+}
+let cityGrp=null, cityObstSave=null, cityObstList=null;
+const cityKioskBody=new THREE.MeshStandardMaterial({color:0x24103a,roughness:.85,flatShading:true});
+const cityKioskBoard=new THREE.MeshStandardMaterial({color:0xffd98a,roughness:.75,flatShading:true});
+const cityKioskNeon=new THREE.MeshStandardMaterial({color:0xff2fb0,roughness:.5,emissive:0xff2fb0,emissiveIntensity:0.55,flatShading:true});
+/* one street kiosk/cart's geometry (visual only — collision lives in OBST via
+   cityObstList, exactly like the store's shelfUnit). */
+function cityStallUnit(x,z,h){
+  const g=new THREE.Group(); g.position.set(x,0,z); cityGrp.add(g);
+  const W=2.6, D=0.9;
+  const boards = h>1.8 ? [0.62,1.28,1.94,h-0.06] : (h>1.1 ? [0.55,1.18,h-0.06] : [0.55,h-0.06]);
+  for(const by of boards){
+    const b=new THREE.Mesh(new THREE.BoxGeometry(W,0.07,D),cityKioskBoard);
+    b.position.y=by; b.castShadow=b.receiveShadow=true; g.add(b);
+  }
+  for(const sx of [-W/2+0.12,W/2-0.12]){
+    const up=new THREE.Mesh(new THREE.BoxGeometry(0.1,h,D+0.12),cityKioskBody);
+    up.position.set(sx,h/2,0); up.castShadow=true; g.add(up);
+  }
+  const awning=new THREE.Mesh(new THREE.BoxGeometry(W+0.3,0.1,D+0.2),cityKioskNeon);   // neon awning bar
+  awning.position.set(0,h+0.55,0); awning.castShadow=true; g.add(awning);
+  const sign=new THREE.Mesh(new THREE.BoxGeometry(1.4,0.3,0.06),cityKioskNeon);        // lit street sign
+  sign.position.set(0,h+1.0,0); g.add(sign);
+  return { x, z, rx:W/2+0.12, rz:D/2+0.12, top:h };
+}
+/* build (once) + show the street decor: kiosk/cart colliders in OBST, the
+   nightclub fixtures down, the skyline world up. */
+function buildCityStreet(){
+  if(!cityGrp){
+    cityGrp=new THREE.Group(); arena.add(cityGrp); arena.userData.cityStreetG=cityGrp;
+    cityObstList=[];
+    for(const u of cityLayout()){ const o=cityStallUnit(u.x,u.z,u.h); o._city=true; cityObstList.push(o); }
+  }
+  if(cityObstList) for(const o of cityObstList) if(OBST.indexOf(o)<0) OBST.push(o);   // tearDown removed them — re-add
+  cityGrp.visible=true;
+  hideBaseFurniture();
+  if(!cityObstSave) cityObstSave=pullNightObst();
+  setRunAmbient('city');
+}
+function tearDownCityStreet(){
+  if(cityGrp) cityGrp.visible=false;
+  for(let i=PICKUPS.length-1;i>=0;i--){ const p=PICKUPS[i];
+    if(p.taken||p.supply){ scene.remove(p.g); PICKUPS.splice(i,1); } }
+  for(let i=OBST.length-1;i>=0;i--){ if(OBST[i]._city) OBST.splice(i,1); }
+  if(cityObstSave){ pushNightObst(cityObstSave); cityObstSave=null; }
+  restoreBaseFurniture();
+}
+
+/* ---- OCEAN FRONT ---------------------------------------------------------
+   The bay world (buildOceanExtras' sea/sun/boat) as a PLAYABLE dock: a
+   fish-stand wall up the back, a pier counter row down the middle, ice
+   crates at the front, pier-end tuna towers. Seafood supplies on every
+   board (the vertical economy again: crate stock is low-reach, tower top
+   stock needs a hang). Hostile mob = the seaside rowdies. Takings = the
+   catch; stock = seafood on ice. */
+const OCEAN_FAMILIES=[
+  { name:'OYSTER',  tint:0x8fe8c8, tier:1 },
+  { name:'SHRIMP',  tint:0xffb08a, tier:1 },
+  { name:'CRAB',    tint:0xff5a2e, tier:2 },
+  { name:'LOBSTER', tint:0xe33a3a, tier:2 },
+  { name:'BLUEFIN', tint:0x4a8aff, tier:3 },
+];
+const OCEAN_TIER_VALUE=[8,22,55];
+function oceanLayout(){
+  const units=[];
+  for(const x of [-12.6,-9,-5.4,-1.8,1.8,5.4,9,12.6]) units.push({x,z:-HALFD+1.7,h:2.4});   // fish-stand wall (tall — hang for the tuna)
+  for(const x of [-10.8,-7.2,-3.6,0,3.6,7.2,10.8]) units.push({x,z:0,h:1.4});               // the pier counter row
+  for(const x of [-7.2,-3.6,3.6,7.2]) units.push({x,z:HALFD-2.6,h:1.0});                    // ice crates (low)
+  units.push({x:-14.4,z:0,h:2.4},{x:14.4,z:0,h:2.4});                                       // pier-end tuna towers
+  return units;
+}
+function oceanSupplySpots(){
+  const spots=[]; let n=0;
+  for(const x of [-12.6,-9,-5.4,-1.8,1.8,5.4,9,12.6]) spots.push({ kind:n++%5, x, z:-HALFD+1.7, y:2.32 });   // stand tops — hang to pluck
+  for(const x of [-10.8,-7.2,-3.6,0,3.6,7.2,10.8]){ spots.push({ kind:n++%5, x:x+0.3, z:0.28, y:1.25 }); spots.push({ kind:n++%5, x:x-0.3, z:-0.12, y:1.3 }); }
+  for(const x of [-7.2,-3.6,3.6,7.2]) spots.push({ kind:n++%5, x, z:HALFD-2.6, y:0.55 });                    // ice crates — low reach
+  spots.push({ kind:n++%5, x:-14.4, z:0, y:2.32 }); spots.push({ kind:n++%5, x:14.4, z:0, y:2.32 });
+  return spots;
+}
+let oceanGrp=null, oceanObstSave=null, oceanObstList=null;
+const oceanDockBody=new THREE.MeshStandardMaterial({color:0x2a3548,roughness:.85,flatShading:true});
+const oceanDockPlank=new THREE.MeshStandardMaterial({color:0xb8c4d4,roughness:.75,flatShading:true});
+const oceanDockBuoy=new THREE.MeshStandardMaterial({color:0xff5a2e,roughness:.5,emissive:0xff5a2e,emissiveIntensity:0.45,flatShading:true});
+/* one dock stand's geometry (visual only — collision lives in OBST via
+   oceanObstList, mirroring the store's shelfUnit). */
+function dockUnit(x,z,h){
+  const g=new THREE.Group(); g.position.set(x,0,z); oceanGrp.add(g);
+  const W=2.6, D=0.9;
+  const boards = h>1.8 ? [0.62,1.28,1.94,h-0.06] : (h>1.1 ? [0.55,1.18,h-0.06] : [0.55,h-0.06]);
+  for(const by of boards){
+    const b=new THREE.Mesh(new THREE.BoxGeometry(W,0.07,D),oceanDockPlank);
+    b.position.y=by; b.castShadow=b.receiveShadow=true; g.add(b);
+  }
+  for(const sx of [-W/2+0.12,W/2-0.12]){
+    const up=new THREE.Mesh(new THREE.BoxGeometry(0.1,h,D+0.12),oceanDockBody);
+    up.position.set(sx,h/2,0); up.castShadow=true; g.add(up);
+  }
+  const buoy=new THREE.Mesh(new THREE.BoxGeometry(0.2,0.2,0.2),oceanDockBuoy);   // marker buoy on the mast
+  buoy.position.set(0,h+0.38,0); g.add(buoy);
+  return { x, z, rx:W/2+0.12, rz:D/2+0.12, top:h };
+}
+/* build (once) + show the dock decor: stand colliders in OBST, the nightclub
+   fixtures down, the bay world up. */
+function buildOceanFront(){
+  if(!oceanGrp){
+    oceanGrp=new THREE.Group(); arena.add(oceanGrp); arena.userData.oceanFrontG=oceanGrp;
+    oceanObstList=[];
+    for(const u of oceanLayout()){ const o=dockUnit(u.x,u.z,u.h); o._ocean=true; oceanObstList.push(o); }
+  }
+  if(oceanObstList) for(const o of oceanObstList) if(OBST.indexOf(o)<0) OBST.push(o);   // tearDown removed them — re-add
+  oceanGrp.visible=true;
+  hideBaseFurniture();
+  if(!oceanObstSave) oceanObstSave=pullNightObst();
+  setRunAmbient('ocean');
+}
+function tearDownOceanFront(){
+  if(oceanGrp) oceanGrp.visible=false;
+  for(let i=PICKUPS.length-1;i>=0;i--){ const p=PICKUPS[i];
+    if(p.taken||p.supply){ scene.remove(p.g); PICKUPS.splice(i,1); } }
+  for(let i=OBST.length-1;i>=0;i--){ if(OBST[i]._ocean) OBST.splice(i,1); }
+  if(oceanObstSave){ pushNightObst(oceanObstSave); oceanObstSave=null; }
+  restoreBaseFurniture();
+}
+
+/* place a supply crate pickup (glowing box, family tint) — same PICKUPS
+   economy as the weapon larder and the grocery's spawnSupply, tagged
+   `supply` so weapons/steals never touch it. Writes the locale run (LRUN);
+   the grocery keeps its own spawnSupply/SRUN path. */
+function spawnLocaleSupply(L, kind, x, z, y){
+  const fam=L.families[kind];
+  const g=new THREE.Group();
+  const box=new THREE.Mesh(new THREE.BoxGeometry(0.42,0.34,0.42),
+    new THREE.MeshStandardMaterial({color:fam.tint,roughness:.55,metalness:.15,emissive:fam.tint,emissiveIntensity:.28,flatShading:true}));
+  box.position.y=0.17; box.castShadow=true; g.add(box);
+  const band=new THREE.Mesh(new THREE.BoxGeometry(0.46,0.08,0.46),
+    new THREE.MeshStandardMaterial({color:0x241c10,roughness:.8,flatShading:true}));
+  band.position.y=0.24; g.add(band);
+  const disc=new THREE.Mesh(new THREE.CircleGeometry(0.4,20),
+    new THREE.MeshBasicMaterial({color:fam.tint,transparent:true,opacity:0.3,depthWrite:false}));
+  disc.rotation.x=-Math.PI/2; disc.position.y=0.02; g.add(disc);
+  g.position.set(x,y,z); scene.add(g);
+  const value=Math.round(L.tierValue[fam.tier-1]*(1+0.1*(RUN.day-1)));
+  const p={ g, key:'supply', supply:true, family:fam, kind, value, x, z, y, disc, taken:false, y0:y };
+  PICKUPS.push(p); LRUN.total++;
+  return p;
+}
+function seedLocaleSupplies(L){
+  for(const s of L.supplies()) spawnLocaleSupply(L, s.kind, s.x, s.z, s.y);
+}
+
+/* ---- the registry: locale name -> generator -----------------------------
+   kitchen + grocery are the legacy flows (wrapped, untouched); city + ocean
+   are full venues on the generalized flow. */
+const PLAY_LOCALES={
+  kitchen:{ key:'kitchen', name:'THE KITCHEN', legacy:true, start:()=>startNight(SLICE, onNightEnd) },
+  grocery:{ key:'grocery', name:'GROCERY RUN', legacy:true, start:()=>startStore() },
+  city:{
+    key:'city', name:'CITY STREET', dur:90,
+    spawn:{ x:0, z:8.5, facing:Math.PI },
+    families:CITY_FAMILIES, tierValue:CITY_TIER_VALUE,
+    layout:cityLayout, supplies:citySupplySpots,
+    build:buildCityStreet, tearDown:tearDownCityStreet, seed:seedLocaleSupplies,
+    mobCount:day=>8+Math.min(6,day), toughP:0.3,
+    flavor:{
+      toast:'CITY STREET — WORK THE BLOCK. ',
+      winKick:'STREET FEAST · THE BLOCK IS FED',
+      loseKick:'THE CROWD TOOK THE BLOCK',
+      winTitle:'STREET<br><span class="b">FEAST</span>',
+      loseTitle:'86\u2019D AT<br><span class="b">THE CORNER</span>',
+      again:'BACK ON THE CORNER',
+      hint:'Jump at a kiosk edge to grab it; <b>up</b> climbs, <b>jump</b> drops. Top-shelf stock comes from a hang off the tall kiosks.'
+    },
+  },
+  ocean:{
+    key:'ocean', name:'OCEAN FRONT', dur:90,
+    spawn:{ x:0, z:8.5, facing:Math.PI },
+    families:OCEAN_FAMILIES, tierValue:OCEAN_TIER_VALUE,
+    layout:oceanLayout, supplies:oceanSupplySpots,
+    build:buildOceanFront, tearDown:tearDownOceanFront, seed:seedLocaleSupplies,
+    mobCount:day=>7+Math.min(6,day), toughP:0.25,
+    flavor:{
+      toast:'OCEAN FRONT — WORK THE DOCK. ',
+      winKick:'CATCH OF THE DAY · THE DOCK IS SOLD OUT',
+      loseKick:'THE TIDE TOOK YOU',
+      winTitle:'CATCH<br><span class="b">OF THE DAY</span>',
+      loseTitle:'86\u2019D AT<br><span class="b">THE DOCK</span>',
+      again:'BACK ON THE DOCK',
+      hint:'Jump at a stand edge to grab it; <b>up</b> climbs, <b>jump</b> drops. The tuna on the tall stands comes from a hang.'
+    },
+  },
+};
+/* startLocale(key) — the venue switch. Legacy runs (kitchen, grocery) keep
+   their own flows; new venues run the generalized locale flow. */
+function startLocale(key){
+  const L=PLAY_LOCALES[key];
+  if(!L) return false;
+  if(L.legacy){ L.start(); return true; }
+  startLocaleRun(L);
+  return true;
+}
+/* startLocaleRun(L) — the generalized rogue-lite venue flow: clear, reset the
+   chef at the venue's spawn, build decor + colliders, seed supplies, spawn the
+   venue's mob, start the clock. Mirrors startStore() line for line; the venue
+   entry supplies every difference. */
+function startLocaleRun(L){
+  for(const e of enemies) scene.remove(e.chef); enemies.length=0;
+  for(const p of PICKUPS) scene.remove(p.g); PICKUPS.length=0;
+  tokensUsed=0; ended=false;
+  GAME.kills=0; GAME.combo=0; GAME.maxCombo=0; GAME.hitsLanded=0;
+  GAME.store=null; GAME.locale=L.key; GAME.vinceNight=false;
+  const RS=LRUN; RS.on=true; RS.t=L.dur; RS.cash=0; RS.collected=0; RS.total=0; RS.byKind={}; RS._warn=99; RS.ended=false;
+  if(typeof dayScene==='function') dayScene(false);
+  document.body.classList.remove("cookmode");
+  NIGHT_ROSTER=null;
+  if(!player){ player=makePlayer(); attachPlayerHelpers(player); }
+  player.hpMax=150+30*upLvl('brawn');
+  player.pos.set(L.spawn.x,0,L.spawn.z); player.vel.set(0,0,0); player.facing=L.spawn.facing!=null?L.spawn.facing:Math.PI; player.hp=player.hpMax; player._feet=false;
+  player.wpn='fists'; player.dur=Infinity; equip(player.chef,'fists');
+  player.dead=false; player.attack=null; player.dodge=null; player.lockOn=null;
+  player.comboTarget=null; player.bufferedHeavy=null; player.bufferT=0;
+  player.drinks=0; player.wastedT=0; player.drinkCD=0; player._drunk=0;
+  player.grabbed=null; hideMashUI(); grabCD=0; player.tackle=null; player.tackleCD=0;
+  player.hold=null; player.grabCD=0; player.steal=null; player.slam=null; player.vy=0; player.pos.y=0;
+  player.ledge=null; player.ledgeCD=0; player._fallFrom=0;
+  resetRagPose(player); player._feet=null; player.vel.set(0,0,0);
+  CAM.yaw=player.facing; CAM.lockK=0;
+  L.build();
+  L.seed();
+  const count=L.mobCount?L.mobCount(RUN.day):6+Math.min(6,RUN.day);
+  const list=[]; for(let i=0;i<count;i++) list.push(Math.random()<(L.toughP||0.22)?'tough':'weak');
+  WAVE.chunks=chunkWaves(list); WAVE.wave=0; WAVE.resting=false; WAVE.done=false; WAVE.winT=0;
+  WAVE.queue=WAVE.chunks[0]; WAVE.total=WAVE.queue.length; WAVE.spawned=0; WAVE.waveDone=false; WAVE.pending=0;
+  spawnWaveChunk(400);
+  updateHUDCooks(0); updateHUDWave();
+  updateHUDHealth(); updateHUDWeapon();
+  GAME.mode='play'; GAME.paused=false;
+  { const pe=document.getElementById('pause'); if(pe) pe.classList.remove('on'); if(master){ try{ master.gain.value=0.5; }catch(e){} } }
+  document.getElementById('hud').classList.add('on');
+  if(TOUCHCAP){ touchEl.classList.add('on'); if(bPause) bPause.classList.add('on'); }
+  document.getElementById('veil').classList.add('hide');
+  document.getElementById('hint').classList.add('on');
+  updateLocaleHUD(L);
+  toast((L.flavor?L.flavor.toast:L.name+' — ')+RS.t+'s.');
+}
+/* updateLocaleHUD(L) — the venue run's clock/takings/stock readout (reuses
+   the grocery store's storehud fixture). */
+function updateLocaleHUD(L){
+  if(!LRUN.on) return;
+  const el=document.getElementById('storehud'); if(!el) return;
+  el.classList.add('on');
+  const t=document.getElementById('storeT'); if(t) t.textContent=Math.ceil(LRUN.t)+'s';
+  const n=document.getElementById('storeN'); if(n) n.textContent='$'+LRUN.cash;
+  const l=document.getElementById('storeL'); if(l) l.textContent='STOCK '+LRUN.collected+'/'+LRUN.total;
+}
+/* localeEnd(L, survived) — close the loop: supplies -> RUN.bank (the shop
+   economy) + RUN.stock (the back-office tally), advance the day, draw the
+   venue's own card. Mirrors storeEnd(). */
+function localeEnd(L, survived){
+  const RS=LRUN; if(RS.ended) return; RS.ended=true;
+  GAME.mode='over';
+  const cash=RS.cash, collected=RS.collected, total=RS.total;
+  L.tearDown();
+  RS.on=false; GAME.locale=null;
+  document.getElementById('hint').classList.remove('on');
+  RUN.bank+=cash; RUN.stock=(RUN.stock||0)+collected;
+  RUN.day++;
+  saveRun();
+  setRunAmbient(currentLocale());          // put the run's own day-cycle sky back for the title/idle
+  showLocaleCard(L, { survived, cash, collected, total });
+}
+function showLocaleCard(L, res){
+  const c=document.getElementById('card');
+  document.getElementById('veil').classList.remove('hide');
+  document.getElementById('hud').classList.remove('on');
+  document.getElementById('storehud').classList.remove('on');
+  touchEl.classList.remove('on'); if(bPause) bPause.classList.remove('on');
+  GAME.paused=false; { const pe=document.getElementById('pause'); if(pe) pe.classList.remove('on'); }
+  const f=L.flavor||{};
+  c.innerHTML='<div class="card end '+(res.survived?'win':'lose')+'">'+
+    '<div class="kick">'+(res.survived?(f.winKick||'VENUE CLEARED'):(f.loseKick||'THE VENUE WON'))+'</div>'+
+    '<div class="title">'+(res.survived?(f.winTitle||'VENUE<br><span class="b">CLEARED</span>'):(f.loseTitle||'86\u2019D'))+'</div>'+
+    '<div class="stat">Taken <b>'+res.collected+'/'+res.total+'</b> &nbsp;·&nbsp; Takings <b>$'+res.cash+'</b>'+
+    '<br>Bank <b>$'+RUN.bank+'</b> &nbsp;·&nbsp; Pantry stock <b>'+(RUN.stock||0)+'</b> — spends in the back office'+
+    '<br><span style="color:#7f6ab0">'+(f.hint||'')+'</span></div>'+
+    '<button class="btn" id="againStoreBtn">'+(res.survived?'NEXT RUN — DAY '+RUN.day:(f.again||'BACK ON THE VENUE'))+'</button>'+
+    '<button class="btn" id="quitStoreBtn" style="margin-top:10px;background:#2a2018;color:var(--cream)">BACK TO TITLE</button></div>';
+  document.getElementById('againStoreBtn').onclick=()=>{ goFullscreen(); GAME.inRun=true; startLocale(L.key); };
+  document.getElementById('quitStoreBtn').onclick=()=>{ GAME.inRun=false; showTitle(); };
+}
+
 /* ================================================================ NIGHT (the seam) */
 /* startNight(cfg,onEnd): cfg = { larder:[{key,x,z,y?}], waves:[kind...],
    waveSizes:[n...]?, player:{wpn,pos:{x,z}?,facing?} }
@@ -4902,6 +5722,7 @@ function startNight(cfg, onEnd){
   player.drinks=0; player.wastedT=0; player.drinkCD=0; player._drunk=0;   // start each night sober
   player.grabbed=null; hideMashUI(); grabCD=0; player.tackle=null; player.tackleCD=0;
   player.hold=null; player.grabCD=0; player.steal=null; player.slam=null; player.vy=0; player.pos.y=0; hideMashUI();
+  player.ledge=null; player.ledgeCD=0; player._fallFrom=0;   // LEDGE (WW): fresh start every night
   resetRagPose(player);
   player._feet=null; player.vel.set(0,0,0);
   CAM.yaw=pfacing; CAM.lockK=0;
@@ -4937,7 +5758,7 @@ function endNight(survived){
 }
 
 /* ================================================================ CARDS */
-const BUILD_VERSION='MOVEMENT BUILD r66';   // shown on the start screen AND the pause menu -- bump every deploy
+const BUILD_VERSION='LOCALE SYSTEM BUILD r68';   // shown on the start screen AND the pause menu -- bump every deploy
 function showTitle(){
   GAME.mode='title';
   { const pv=document.getElementById('pver'); if(pv) pv.textContent=BUILD_VERSION; }
@@ -4948,10 +5769,16 @@ function showTitle(){
     'a spatula, a nonstick, the cast iron if HR isn\u2019t around \u2014 and clear the line. '+
     'Everything breaks. Everything is heavy in its own way. Tips are not guaranteed.</div>'+
     '<button class="btn" id="dayBtn">'+(RUN.day>1?('☀️ CONTINUE — DAY '+RUN.day+' ($'+RUN.bank+')'):'☀️ OPEN THE DINER (DAY SHIFT)')+'</button>'+
+    '<button class="btn" id="storeBtn" style="margin-top:10px;background:#1d3a2a;color:var(--cream);box-shadow:0 6px 0 #0e2015,0 0 26px #8fc86655,0 10px 22px #0007">🛒 GROCERY RUN — STOCK THE PANTRY</button>'+
+    '<button class="btn" id="cityBtn" style="margin-top:10px;background:#2a0a3e;color:var(--cream);box-shadow:0 6px 0 #12042a,0 0 26px #ff2fb066,0 10px 22px #0007">🏙️ CITY STREET — WORK THE BLOCK</button>'+
+    '<button class="btn" id="oceanBtn" style="margin-top:10px;background:#062a3a;color:var(--cream);box-shadow:0 6px 0 #02121a,0 0 26px #2de2e666,0 10px 22px #0007">🌊 OCEAN FRONT — WORK THE DOCK</button>'+
     '<button class="btn" id="playBtn" style="margin-top:10px;background:#2a0a3e;color:var(--cream);box-shadow:0 6px 0 #12042a,0 0 26px #2de2e666,0 10px 22px #0007">🌙 STEP TO THE PASS (NIGHT ONLY)</button>'+
     '<div style="margin-top:18px;color:#ff8a3a;letter-spacing:.14em;font-size:14px">'+BUILD_VERSION+'</div>'+
     '<div id="ctrls">'+ctrlRows()+'</div>';
   document.getElementById('dayBtn').onclick=()=>{ goFullscreen(); audioInit(); if(AC&&AC.state==='suspended')AC.resume(); ended=false; toDay(); };
+  document.getElementById('storeBtn').onclick=()=>{ goFullscreen(); audioInit(); if(AC&&AC.state==='suspended')AC.resume(); ended=false; GAME.inRun=true; startStore(); };
+  document.getElementById('cityBtn').onclick=()=>{ goFullscreen(); audioInit(); if(AC&&AC.state==='suspended')AC.resume(); ended=false; GAME.inRun=true; startLocale('city'); };
+  document.getElementById('oceanBtn').onclick=()=>{ goFullscreen(); audioInit(); if(AC&&AC.state==='suspended')AC.resume(); ended=false; GAME.inRun=true; startLocale('ocean'); };
   document.getElementById('playBtn').onclick=()=>{ goFullscreen(); audioInit(); if(AC&&AC.state==='suspended')AC.resume(); ended=false; GAME.inRun=false; startNight(SLICE, onNightEnd); };
   document.getElementById('veil').classList.remove('hide');
   touchEl.classList.remove('on'); if(bPause) bPause.classList.remove('on');
@@ -5106,7 +5933,7 @@ function renderShop(){
   document.getElementById('card').innerHTML='<div class="card shop">'+
     '<div class="kick">BEFORE OPEN · DAY '+RUN.day+'</div>'+
     '<div class="title">BACK <span class="b">OFFICE</span></div>'+
-    '<div class="sbank">BANK <b>$'+RUN.bank+'</b> &nbsp;·&nbsp; BELI <b>'+beli().toFixed(1)+'</b> &nbsp;·&nbsp; RENT $'+rentFor(weekOf(RUN.day))+' in '+rin+(rin===1?' day':' days')+'</div>'+
+    '<div class="sbank">BANK <b>$'+RUN.bank+'</b> &nbsp;·&nbsp; BELI <b>'+beli().toFixed(1)+'</b> &nbsp;·&nbsp; PANTRY STOCK <b>'+(RUN.stock||0)+'</b> &nbsp;·&nbsp; RENT $'+rentFor(weekOf(RUN.day))+' in '+rin+(rin===1?' day':' days')+'</div>'+
     repairs+
     '<div class="sshelf">UPGRADES</div>'+
     '<div class="shoplist">'+rows+'</div>'+
@@ -5220,37 +6047,124 @@ const INGREDIENTS={
   lime:    { name:'LIME',     raw:0x9fce3a, col:0xbfe05a },
   avocado: { name:'AVOCADO',  raw:0x5a7a2a, col:0x8bbf5a },
   crab:    { name:'CRAB',     raw:0xe08a5a, col:0xf0a674 },
+  // DLC05 pizza ingredients
+  dough:       { name:'DOUGH',         raw:0xe8d8b0, col:0xc8a060 },
+  tomato_sauce:{ name:'TOMATO SAUCE',  raw:0xc03020, col:0x8b0000 },
+  onion:       { name:'ONION',         raw:0xe8d8c8, col:0xc8a860 },
+  cheese:      { name:'CHEESE',        raw:0xffe060, col:0xe0c040 },
+  pepperoni:   { name:'PEPPERONI',     raw:0xc03020, col:0x8b0000 },
+  // curry ingredients
+  coconut_milk:{ name:'COCONUT MILK',  raw:0xf8f0e0, col:0xe8e0d0 },
+  curry_paste: { name:'CURRY PASTE',   raw:0xc04020, col:0x8b2010 },
+  chicken:     { name:'CHICKEN',       raw:0xf0c0a0, col:0xd08060 },
+  potato:      { name:'POTATO',        raw:0xd8c090, col:0xb89040 },
+  carrot:      { name:'CARROT',        raw:0xf08030, col:0xd06020 },
+  bell_pepper: { name:'BELL PEPPER',   raw:0x40c040, col:0x208020 },
+  chili:       { name:'CHILI',         raw:0xd02020, col:0x8b0000 },
+  // smoothie
+  chocolate:   { name:'CHOCOLATE',     raw:0x5a3020, col:0x3a1810 },
+  // bobotie
+  egg:         { name:'EGG',           raw:0xf8e8c0, col:0xe8d8a0 },
+  flour:       { name:'FLOUR',         raw:0xf8f0e0, col:0xe8e0c0 },
+  batter:      { name:'BATTER',        raw:0xf0e8c0, col:0xe8d8a0 },
+  // sushi
+  seaweed:     { name:'SEAWEED',       raw:0x2a5a2a, col:0x1a3a1a },
+  fish:        { name:'FISH',          raw:0xf0a080, col:0xd08060 },
+  cucumber:    { name:'CUCUMBER',      raw:0x60b040, col:0x408020 },
 };
 // A COMPONENT is an ingredient in a required STATE, reached by a PROCESS at a
 // station: chop@prep, boil@pot, mash@mash-bowl (+ grill@griddle, fry@fryer for
 // later). 'raw' = a straight add (a squeeze of lime, a fold of crab). A recipe is
 // the SET of finished components -- and a dish is only OFFERED once you own the
 // stations to make it (canMake), so buying ingredients+gear is what unlocks it.
-const PROC_STATE={ chop:'chopped', boil:'boiled', mash:'mashed', grill:'grilled', fry:'fried' };
-const PROC_STATION={ chop:'prep', mash:'mash', boil:'cook', grill:'cook', fry:'cook' };
+const PROC_STATE={ chop:'chopped', boil:'boiled', mash:'mashed', grill:'grilled', fry:'fried', bake:'baked', stir:'stirred', blend:'blended', mix:'mixed', roll:'rolled' };
+const PROC_STATION={ chop:'prep', mash:'mash', boil:'cook', grill:'cook', fry:'cook', bake:'cook', stir:'cook', blend:'blend', mix:'mix', roll:'prep' };
 const STATE_PROC={}; for(const p in PROC_STATE) STATE_PROC[PROC_STATE[p]]=p;   // reverse: state -> process
 const RECIPES={
   salad:{ name:'SALAD', short:'SALAD', pay:16, plateCol:0x8fd46a, need:[ {id:'lettuce',s:'chopped'}, {id:'tomato',s:'chopped'} ] },
   rice: { name:'CILANTRO-LIME RICE', short:'RICE', pay:15, plateCol:0xeee6c8, need:[ {id:'rice',s:'boiled'}, {id:'cilantro',s:'chopped'}, {id:'lime',s:'raw'} ] },
   guac: { name:'CRAB GUAC', short:'GUAC', pay:22, plateCol:0x8bbf5a, need:[ {id:'avocado',s:'mashed'}, {id:'crab',s:'raw'}, {id:'lime',s:'raw'} ] },
+  // DLC05 pizza — base + tomato/onion/cheese/pepperoni toppings, baked in oven
+  pizza:{ name:'PIZZA', short:'PIZZA', pay:28, plateCol:0xe8c060, need:[
+    {id:'dough',s:'baked'}, {id:'tomato_sauce',s:'raw'}, {id:'onion',s:'chopped'},
+    {id:'cheese',s:'raw'}, {id:'pepperoni',s:'chopped'}
+  ]},
+  // curry — coconut milk + paste + 2 chopped (chicken+potato default; pool can expand)
+  curry:{ name:'CURRY', short:'CURRY', pay:24, plateCol:0xe8c040, need:[
+    {id:'coconut_milk',s:'raw'}, {id:'curry_paste',s:'raw'},
+    {id:'chicken',s:'chopped'}, {id:'potato',s:'chopped'}
+  ]},
+  // chocolate smoothie — 3x chocolate blended in a cup; vessel is the cup itself
+  smoothie:{ name:'CHOCOLATE SMOOTHIE', short:'SMOOTHIE', pay:18, plateCol:0x5a3020, need:[
+    {id:'chocolate',s:'blended',qty:3}
+  ], vessel:'cup' },
+  // bobotie — egg+flour mixed into batter
+  bobotie:{ name:'BOBOTIE', short:'BOBOTIE', pay:26, plateCol:0xe8c860, need:[
+    {id:'batter',s:'mixed'}
+  ]},
+  // sushi rolls — rice boiled, seaweed rolled, topping chopped
+  cucumber_roll:{ name:'CUCUMBER ROLL', short:'CUC ROLL', pay:14, plateCol:0x60b040, need:[
+    {id:'rice',s:'boiled'}, {id:'seaweed',s:'rolled'}, {id:'cucumber',s:'chopped'}
+  ]},
+  fish_roll:{ name:'FISH ROLL', short:'FISH ROLL', pay:20, plateCol:0xf0a080, need:[
+    {id:'rice',s:'boiled'}, {id:'seaweed',s:'rolled'}, {id:'fish',s:'chopped'}
+  ]},
 };
-const ING_EMOJI={ lettuce:'🥬', tomato:'🍅', rice:'🍚', cilantro:'🌿', lime:'🍈', avocado:'🥑', crab:'🦀' };
+const ING_EMOJI={ lettuce:'🥬', tomato:'🍅', rice:'🍚', cilantro:'🌿', lime:'🍈', avocado:'🥑', crab:'🦀', dough:'🥖', tomato_sauce:'🥫', onion:'🧅', cheese:'🧀', pepperoni:'🍕', coconut_milk:'🥥', curry_paste:'🍛', chicken:'🍗', potato:'🥔', carrot:'🥕', bell_pepper:'🫑', chili:'🌶️', chocolate:'🍫', egg:'🥚', flour:'🌾', batter:'🥞', seaweed:'🌿', fish:'🐟', cucumber:'🥒' };
 function procVerb(s){ return s==='raw'?'add':s==='chopped'?'chop':s==='boiled'?'boil':s==='mashed'?'mash':s==='grilled'?'grill':s==='fried'?'fry':s; }
 const RECIPE_KEYS=Object.keys(RECIPES);
 const compKey=c=>c.id+':'+c.state;      // a carried/plated component's identity
 const needKey=n=>n.id+':'+n.s;
 const setKey=a=>a.slice().sort().join('+');
-function matchRecipe(items){ const k=setKey(items.map(compKey)); for(const rk of RECIPE_KEYS){ if(setKey(RECIPES[rk].need.map(needKey))===k) return rk; } return null; }
-function canExtend(items){ const have=items.map(compKey); return RECIPE_KEYS.some(rk=>{ const need=RECIPES[rk].need.map(needKey); return have.every(h=>need.includes(h)); }); }
-function plateAddOk(items,comp){ const k=compKey(comp); if(items.some(x=>compKey(x)===k)) return false; return canExtend(items.concat(comp)); }
-function recipeNeedStr(rk){ return RECIPES[rk].need.map(n=>INGREDIENTS[n.id].name+(n.s!=='raw'?' ('+n.s+')':'')).join(' + '); }
-function plateMissing(items){ const have=items.map(compKey); for(const rk of RECIPE_KEYS){ const need=RECIPES[rk].need; if(have.every(h=>need.map(needKey).includes(h))){ const miss=need.find(n=>!have.includes(needKey(n))); if(miss) return INGREDIENTS[miss.id].name+(miss.s!=='raw'?' ('+miss.s+')':''); } } return ''; }
+// count-based recipe matching: a recipe's need entries with qty>1 require that many
+// of the same component on the plate. setKey collapses duplicates, so we count.
+function matchRecipe(items){
+  const have={}; for(const c of items){ const k=compKey(c); have[k]=(have[k]||0)+1; }
+  const haveKeys=Object.keys(have).sort().join('+');
+  for(const rk of RECIPE_KEYS){
+    const r=RECIPES[rk]; if(r.vessel) continue;
+    const needMap={}; for(const n of r.need) needMap[needKey(n)]=(needMap[needKey(n)]||0)+(n.qty||1);
+    const needKeys=Object.keys(needMap).sort().join('+');
+    if(haveKeys!==needKeys) continue;
+    if(Object.keys(needMap).every(k=>have[k]===needMap[k])) return rk;
+  }
+  return null;
+}
+function canExtend(items){
+  const have={}; for(const c of items){ const k=compKey(c); have[k]=(have[k]||0)+1; }
+  return RECIPE_KEYS.some(rk=>{
+    const r=RECIPES[rk]; if(r.vessel) return false;
+    const needMap={}; for(const n of r.need) needMap[needKey(n)]=(needMap[needKey(n)]||0)+(n.qty||1);
+    return Object.keys(have).every(k=>needMap[k]!==undefined && have[k]<=needMap[k]);
+  });
+}
+function plateAddOk(items,comp){
+  const testItems=items.concat(comp);
+  const have={}; for(const c of testItems){ const k=compKey(c); have[k]=(have[k]||0)+1; }
+  return RECIPE_KEYS.some(rk=>{
+    const r=RECIPES[rk]; if(r.vessel) return false;
+    const needMap={}; for(const n of r.need) needMap[needKey(n)]=(needMap[needKey(n)]||0)+(n.qty||1);
+    return Object.keys(have).every(k=>needMap[k]!==undefined && have[k]<=needMap[k]);
+  });
+}
+function recipeNeedStr(rk){ const r=RECIPES[rk]; return r.need.map(n=>INGREDIENTS[n.id].name+(n.qty?' x'+n.qty:'')+(n.s!=='raw'?' ('+n.s+')':'')).join(' + ')+(r.vessel?' in a '+r.vessel:''); }
+function plateMissing(items){
+  const have={}; for(const c of items){ const k=compKey(c); have[k]=(have[k]||0)+1; }
+  for(const rk of RECIPE_KEYS){ const r=RECIPES[rk]; if(r.vessel) continue;
+    const needMap={}; for(const n of r.need) needMap[needKey(n)]=(needMap[needKey(n)]||0)+(n.qty||1);
+    if(Object.keys(have).every(k=>needMap[k]!==undefined && have[k]<=needMap[k])){
+      const miss=Object.keys(needMap).find(k=>(have[k]||0)<needMap[k]);
+      if(miss){ const parts=miss.split(':'); return INGREDIENTS[parts[0]].name+(parts[1]!=='raw'?' ('+parts[1]+')':''); }
+    }
+  }
+  return '';
+}
 // which recipes you can actually MAKE right now = you own a crate for every
 // ingredient + a station for every process it needs (+ a plate). This gates orders.
 function haveStationKind(kind, proc){ return STATIONS.some(s=>s.kind===kind && (proc==null||s.process===proc)); }
 function haveCrate(id){ return STATIONS.some(s=>s.kind==='crate'&&s.ingredient===id); }
 function canMake(rk){
-  const r=RECIPES[rk]; if(!r || !haveStationKind('plate')) return false;
+  const r=RECIPES[rk]; if(!r || (!r.vessel && !haveStationKind('plate'))) return false;
   for(const n of r.need){
     if(!haveCrate(n.id)) return false;
     if(n.s!=='raw'){ const proc=STATE_PROC[n.s], kind=PROC_STATION[proc];
@@ -5266,9 +6180,9 @@ function missingFor(rk){
     if(!haveCrate(n.id) && !seen.has('c'+n.id)){ seen.add('c'+n.id); need.push(INGREDIENTS[n.id].name+' crate'); }
     if(n.s!=='raw'){ const proc=STATE_PROC[n.s], kind=PROC_STATION[proc];
       const has = kind==='cook'?haveStationKind('cook',proc):haveStationKind(kind);
-      const label = kind==='prep'?'a chop board':kind==='mash'?'a mash bowl':proc==='boil'?'a pot':proc==='grill'?'a griddle':proc==='fry'?'a fryer':'a station';
+      const label = kind==='prep'?'a chop board':kind==='mash'?'a mash bowl':kind==='blend'?'a blender':kind==='mix'?'a mixer':proc==='boil'?'a pot':proc==='grill'?'a griddle':proc==='fry'?'a fryer':proc==='bake'?'an oven':proc==='stir'?'a wok':proc==='roll'?'a rolling mat':'a station';
       if(!has && !seen.has('p'+label)){ seen.add('p'+label); need.push(label); } } }
-  if(!haveStationKind('plate')) need.push('a plating station');
+  if(!r.vessel && !haveStationKind('plate')) need.push('a plating station');
   return need.join(', ')||'gear';
 }
 // one recipe card: the dish, its pay, and its ordered component steps (+ plate up)
@@ -5358,6 +6272,31 @@ const STATION_DEFS={
   pot:     { kind:'cook', process:'boil',  col:0x9a5a2a },
   griddle: { kind:'cook', process:'grill', col:0x545a60 },
   fryer:   { kind:'cook', process:'fry',   col:0xc9a23a },
+  // DLC05 new stations
+  doughcrate:   { kind:'crate', ingredient:'dough',     col:0xe8d8b0 },
+  tomato_saucecrate:{ kind:'crate', ingredient:'tomato_sauce', col:0xc03020 },
+  onioncrate:   { kind:'crate', ingredient:'onion',     col:0xe8d8c8 },
+  cheesecrate:  { kind:'crate', ingredient:'cheese',    col:0xffe060 },
+  pepperonicrate:{ kind:'crate', ingredient:'pepperoni', col:0xc03020 },
+  coconut_milkcrate:{ kind:'crate', ingredient:'coconut_milk', col:0xf8f0e0 },
+  curry_pastecrate:{ kind:'crate', ingredient:'curry_paste', col:0xc04020 },
+  chickencrate: { kind:'crate', ingredient:'chicken',   col:0xf0c0a0 },
+  potatocrate:  { kind:'crate', ingredient:'potato',    col:0xd8c090 },
+  carrotcrate:  { kind:'crate', ingredient:'carrot',    col:0xf08030 },
+  bell_peppercrate:{ kind:'crate', ingredient:'bell_pepper', col:0x40c040 },
+  chilicate:    { kind:'crate', ingredient:'chili',     col:0xd02020 },
+  chocolatecrate:{ kind:'crate', ingredient:'chocolate', col:0x5a3020 },
+  eggcrate:     { kind:'crate', ingredient:'egg',       col:0xf8e8c0 },
+  flourcrate:   { kind:'crate', ingredient:'flour',     col:0xf8f0e0 },
+  seaweedcrate: { kind:'crate', ingredient:'seaweed',   col:0x2a5a2a },
+  fishcrate:    { kind:'crate', ingredient:'fish',      col:0xf0a080 },
+  cucumbercrate:{ kind:'crate', ingredient:'cucumber',  col:0x60b040 },
+  oven:     { kind:'cook', process:'bake',  col:0x3a3a4a },
+  wok:      { kind:'cook', process:'stir',  col:0x4a4a5a },
+  blender:  { kind:'blend', col:0x6a6a7a },
+  mixer:    { kind:'mix',   col:0x8a7a5a },
+  mat:      { kind:'prep',  col:0x4a7a3a },
+  foodbank: { kind:'foodbank', col:0x8a6a4a },
 };
 // the kitchen you start with -- the SALAD line: two ingredient crates, two chop
 // boards (chopping is the bottleneck, same as Overcooked/PlateUp), a plating
@@ -5386,29 +6325,29 @@ function applyLayout(layout){
 }
 applyLayout(DEFAULT_LAYOUT);   // populate immediately; RUN.layout re-applies after loadRun()
 const dmat=(c,r,m)=>new THREE.MeshStandardMaterial({color:c,roughness:r==null?.7:r,metalness:m==null?.12:m,flatShading:true});
-const STATION_LABEL={ lettucecrate:'LETTUCE', tomatocrate:'TOMATO', ricecrate:'RICE', cilantrocrate:'CILANTRO', limecrate:'LIME', avocadocrate:'AVOCADO', crabcrate:'CRAB', prep:'CHOP', prep2:'CHOP', mash:'MASH', counter:'COUNTER', plate:'PLATE UP', sink:'SINK', pot:'BOIL', griddle:'GRILL', fryer:'FRY' };
+const STATION_LABEL={ lettucecrate:'LETTUCE', tomatocrate:'TOMATO', ricecrate:'RICE', cilantrocrate:'CILANTRO', limecrate:'LIME', avocadocrate:'AVOCADO', crabcrate:'CRAB', prep:'CHOP', prep2:'CHOP', mash:'MASH', counter:'COUNTER', plate:'PLATE UP', sink:'SINK', pot:'BOIL', griddle:'GRILL', fryer:'FRY', doughcrate:'DOUGH', tomato_saucecrate:'TOMATO SAUCE', onioncrate:'ONION', cheesecrate:'CHEESE', pepperonicrate:'PEPPERONI', coconut_milkcrate:'COCONUT MILK', curry_pastecrate:'CURRY PASTE', chickencrate:'CHICKEN', potatocrate:'POTATO', carrotcrate:'CARROT', bell_peppercrate:'BELL PEPPER', chilicate:'CHILI', chocolatecrate:'CHOCOLATE', eggcrate:'EGG', flourcrate:'FLOUR', seaweedcrate:'SEAWEED', fishcrate:'FISH', cucumbercrate:'CUCUMBER', oven:'BAKE', wok:'STIR', blender:'BLEND', mixer:'MIX', mat:'ROLL', foodbank:'FOOD BANK' };
 // bold, distinct accent colour per station -- painted on the counter FRONT so you
 // can read what each is from across the room (Overcooked/PlateUp colour-coding).
-const STATION_ACCENT={ lettucecrate:0x4fb03a, tomatocrate:0xd23f2a, ricecrate:0xd9c98a, cilantrocrate:0x3f8f34, limecrate:0x9fce3a, avocadocrate:0x5a7a2a, crabcrate:0xe08a5a, prep:0x8a5a2c, prep2:0x8a5a2c, mash:0x8a6a3a, counter:0xb89a6a, plate:0xdfe4e8, sink:0x2f9fb8, pot:0xc23a2a, griddle:0x394048, fryer:0xe6a721 };
+const STATION_ACCENT={ lettucecrate:0x4fb03a, tomatocrate:0xd23f2a, ricecrate:0xd9c98a, cilantrocrate:0x3f8f34, limecrate:0x9fce3a, avocadocrate:0x5a7a2a, crabcrate:0xe08a5a, prep:0x8a5a2c, prep2:0x8a5a2c, mash:0x8a6a3a, counter:0xb89a6a, plate:0xdfe4e8, sink:0x2f9fb8, pot:0xc23a2a, griddle:0x394048, fryer:0xe6a721, doughcrate:0xd9c98a, tomato_saucecrate:0xc03020, onioncrate:0xd9c98a, cheesecrate:0xe6c040, pepperonicrate:0xc03020, coconut_milkcrate:0xf8f0e0, curry_pastecrate:0xc04020, chickencrate:0xf0c0a0, potatocrate:0xd8c090, carrotcrate:0xf08030, bell_peppercrate:0x40c040, chilicate:0xd02020, chocolatecrate:0x5a3020, eggcrate:0xf8e8c0, flourcrate:0xf8f0e0, seaweedcrate:0x2a5a2a, fishcrate:0xf0a080, cucumbercrate:0x60b040, oven:0xe87a2a, wok:0x4a4a5a, blender:0x6a6a7a, mixer:0x8a7a5a, mat:0x4a7a3a, foodbank:0x8a6a4a };
 // a big glanceable icon per station -- shown in the proximity magnify bubble so you
 // never have to read the tiny counter labels.
-const STATION_EMOJI={ lettucecrate:'🥬', tomatocrate:'🍅', ricecrate:'🍚', cilantrocrate:'🌿', limecrate:'🍈', avocadocrate:'🥑', crabcrate:'🦀', prep:'🔪', prep2:'🔪', mash:'🥣', counter:'🍽', plate:'🍽️', sink:'🚰', pot:'🍲', griddle:'🥩', fryer:'🍟' };
+const STATION_EMOJI={ lettucecrate:'🥬', tomatocrate:'🍅', ricecrate:'🍚', cilantrocrate:'🌿', limecrate:'🍈', avocadocrate:'🥑', crabcrate:'🦀', prep:'🔪', prep2:'🔪', mash:'🥣', counter:'🍽', plate:'🍽️', sink:'🚰', pot:'🍲', griddle:'🥩', fryer:'🍟', doughcrate:'🥖', tomato_saucecrate:'🥫', onioncrate:'🧅', cheesecrate:'🧀', pepperonicrate:'🍕', coconut_milkcrate:'🥥', curry_pastecrate:'🍛', chickencrate:'🍗', potatocrate:'🥔', carrotcrate:'🥕', bell_peppercrate:'🫑', chilicate:'🌶️', chocolatecrate:'🍫', eggcrate:'🥚', flourcrate:'🌾', seaweedcrate:'🌿', fishcrate:'🐟', cucumbercrate:'🥒', oven:'🔥', wok:'🥘', blender:'🥤', mixer:'🥣', mat:'🍣', foodbank:'📦' };
 // fixed 2.5D daytime camera (Overcooked/PlateUp-style): high, angled, framing the
 // whole kitchen line + the counter. Tunable by eye.
 const DAYCAM={ x:0, y:14.5, z:11.5, lookY:0.9, lookZ:-1.6, fov:45 };   // zoomed in; gently follows the chef (see dayCamera)
 const DAY={ on:false, t:0, cash:0, served:0, lost:0, shooed:0, combo:0, best:0, cleanPlates:6, dirty:0,
   diners:[], slotTaken:[], carry:null, spawnT:1.4, washT:0, _carrySig:'', carryMesh:null, passDishes:[],
-  ledger:[], spawnMul:1 };   // cast indices of everyone shooed or walked-out today -> tonight's roster
+  ledger:[], spawnMul:1, plateReturnTime:5, returningPlates:[] };   // cast indices of everyone shooed or walked-out today -> tonight's roster
 
 /* ---- THE RUN: the persistent campaign the day->night->day loop advances ----
    Rating is the spine: a rolling average of daily scores that scales the night
    (bigger, tougher mob) and, at week boundaries, the rent. Cash banks across
    days; the night pays a bounty that funds tomorrow. Persisted to localStorage. */
 const RENT_BASE=1500, RENT_STEP=500, WEEK_DAYS=5, RATING_WINDOW=5, SEED_CASH=1000;
-const RUN={ day:1, bank:SEED_CASH, debt:1500, rating:6, ratingHist:[], upgrades:{}, holiday:0, layout:null, tables:null, owned:[] };
-function loadRun(){ try{ const s=localStorage.getItem('so_run'); if(s){ Object.assign(RUN, JSON.parse(s)); } else { RUN.bank=SEED_CASH; } }catch(e){} if(!RUN.upgrades) RUN.upgrades={}; if(RUN.holiday==null) RUN.holiday=0; if(!RUN.layout) RUN.layout=null; if(!RUN.tables) RUN.tables=null; if(!RUN.owned) RUN.owned=[]; GAME.debt=RUN.debt; }
+const RUN={ day:1, bank:SEED_CASH, debt:1500, rating:6, ratingHist:[], upgrades:{}, holiday:0, layout:null, tables:null, owned:[], stock:0 };
+function loadRun(){ try{ const s=localStorage.getItem('so_run'); if(s){ Object.assign(RUN, JSON.parse(s)); } else { RUN.bank=SEED_CASH; } }catch(e){} if(!RUN.upgrades) RUN.upgrades={}; if(RUN.holiday==null) RUN.holiday=0; if(!RUN.layout) RUN.layout=null; if(!RUN.tables) RUN.tables=null; if(!RUN.owned) RUN.owned=[]; if(RUN.stock==null) RUN.stock=0; GAME.debt=RUN.debt; }
 function saveRun(){ try{ localStorage.setItem('so_run', JSON.stringify(RUN)); }catch(e){} }
-function resetRun(){ RUN.day=1; RUN.bank=SEED_CASH; RUN.debt=1500; RUN.rating=6; RUN.ratingHist=[]; RUN.upgrades={}; RUN.holiday=0; RUN.layout=null; RUN.tables=null; RUN.owned=[]; GAME.debt=1500; saveRun(); }
+function resetRun(){ RUN.day=1; RUN.bank=SEED_CASH; RUN.debt=1500; RUN.rating=6; RUN.ratingHist=[]; RUN.upgrades={}; RUN.holiday=0; RUN.layout=null; RUN.tables=null; RUN.owned=[]; RUN.stock=0; GAME.debt=1500; saveRun(); }
 loadRun();
 // re-resolve stations + tables from the saved layout (falls back to the defaults).
 applyLayout(RUN.layout && RUN.layout.length ? RUN.layout : DEFAULT_LAYOUT);
@@ -5447,6 +6386,31 @@ const STORE=[
   { kind:'station', def:'crabcrate',    name:'Crab Crate',      desc:'Crab — folded in raw (Crab Guac)',           price:220, icon:'🦀' },
   { kind:'station', def:'griddle',      name:'Griddle',         desc:'Grill station (for burgers to come)',        price:340, icon:'🥩' },
   { kind:'station', def:'fryer',        name:'Fryer',           desc:'Fry station (for fried dishes to come)',     price:360, icon:'🍟' },
+  // DLC05 new stations
+  { kind:'station', def:'oven',         name:'Oven',            desc:'Bake station — pizza & more',                price:380, icon:'🔥' },
+  { kind:'station', def:'wok',          name:'Wok',             desc:'Stir-fry station — curry & more',            price:340, icon:'🥘' },
+  { kind:'station', def:'blender',      name:'Blender',         desc:'Blend smoothies & drinks (no plate needed)', price:300, icon:'🥤' },
+  { kind:'station', def:'mixer',        name:'Mixer',           desc:'Combine two ingredients into one',           price:280, icon:'🥣' },
+  { kind:'station', def:'mat',          name:'Rolling Mat',     desc:'Roll sushi & wraps',                         price:260, icon:'🍣' },
+  { kind:'station', def:'foodbank',     name:'Food Bank',       desc:'Deposit requested ingredients for bonus $25',price:200, icon:'📦' },
+  { kind:'station', def:'doughcrate',   name:'Dough Crate',     desc:'Dough source',                               price:130, icon:'🥖' },
+  { kind:'station', def:'tomato_saucecrate',name:'Tomato Sauce Crate',desc:'Tomato sauce source',              price:120, icon:'🥫' },
+  { kind:'station', def:'onioncrate',   name:'Onion Crate',     desc:'Onion source',                               price:110, icon:'🧅' },
+  { kind:'station', def:'cheesecrate',  name:'Cheese Crate',    desc:'Cheese source',                              price:120, icon:'🧀' },
+  { kind:'station', def:'pepperonicrate',name:'Pepperoni Crate',desc:'Pepperoni source',                          price:140, icon:'🍕' },
+  { kind:'station', def:'coconut_milkcrate',name:'Coconut Milk Crate',desc:'Coconut milk source',            price:120, icon:'🥥' },
+  { kind:'station', def:'curry_pastecrate',name:'Curry Paste Crate',desc:'Curry paste source',               price:130, icon:'🍛' },
+  { kind:'station', def:'chickencrate', name:'Chicken Crate',   desc:'Chicken source',                            price:150, icon:'🍗' },
+  { kind:'station', def:'potatocrate',  name:'Potato Crate',    desc:'Potato source',                             price:110, icon:'🥔' },
+  { kind:'station', def:'carrotcrate',  name:'Carrot Crate',    desc:'Carrot source',                             price:110, icon:'🥕' },
+  { kind:'station', def:'bell_peppercrate',name:'Bell Pepper Crate',desc:'Bell pepper source',                price:120, icon:'🫑' },
+  { kind:'station', def:'chilicate',    name:'Chili Crate',     desc:'Chili source',                              price:120, icon:'🌶️' },
+  { kind:'station', def:'chocolatecrate',name:'Chocolate Crate',desc:'Chocolate source',                         price:130, icon:'🍫' },
+  { kind:'station', def:'eggcrate',     name:'Egg Crate',       desc:'Egg source',                                price:120, icon:'🥚' },
+  { kind:'station', def:'flourcrate',   name:'Flour Crate',     desc:'Flour source',                              price:110, icon:'🌾' },
+  { kind:'station', def:'seaweedcrate', name:'Seaweed Crate',   desc:'Seaweed source',                            price:120, icon:'🌿' },
+  { kind:'station', def:'fishcrate',    name:'Fish Crate',      desc:'Fish source',                               price:180, icon:'🐟' },
+  { kind:'station', def:'cucumbercrate',name:'Cucumber Crate',  desc:'Cucumber source',                           price:110, icon:'🥒' },
   { kind:'table',                        name:'Dining Table',    desc:'More seats — place it, then set its chairs', price:300, icon:'🪑' },
 ];
 function ownedCount(){ return (RUN.owned||[]).length; }
@@ -5597,6 +6561,53 @@ function buildAppliance(s,g){
     const water=new THREE.Mesh(new THREE.BoxGeometry(1.12,0.06,0.82),dmat(0x35b6d6,.15,.25)); water.position.y=SURF+0.32; g.add(water);
     const neck=new THREE.Mesh(new THREE.CylinderGeometry(0.055,0.055,0.62,12),dmat(0xcfd8dd,.3,.7)); neck.position.set(0,SURF+0.6,-0.42); g.add(neck);
     const spout=new THREE.Mesh(new THREE.CylinderGeometry(0.055,0.055,0.4,12),dmat(0xcfd8dd,.3,.7)); spout.rotation.x=Math.PI/2; spout.position.set(0,SURF+0.88,-0.24); g.add(spout);
+  } else if(s.def==='oven'){                  // OVEN: boxy cook station with glass-door front, dark grey body, warm interior glow
+    const body=new THREE.Mesh(new THREE.BoxGeometry(1.5,0.7,1.0),dmat(0x2a2a32,.5,.3)); body.position.y=SURF+0.35; g.add(body);
+    const door=new THREE.Mesh(new THREE.BoxGeometry(1.3,0.5,0.08),dmat(0x1a1a1e,.3,.2)); door.position.set(0,SURF+0.36,0.5); g.add(door);
+    const glass=new THREE.Mesh(new THREE.BoxGeometry(1.0,0.34,0.04),dmat(0xff7a1e,.15,.1)); glass.position.set(0,SURF+0.36,0.53); g.add(glass);
+    const handle=new THREE.Mesh(new THREE.CylinderGeometry(0.04,0.04,0.9,8),dmat(0xcfd8dd,.3,.7)); handle.rotation.x=Math.PI/2; handle.position.set(0,SURF+0.4,0.56); g.add(handle);
+    const glow=new THREE.Mesh(new THREE.SphereGeometry(0.3,12,10),
+      new THREE.MeshBasicMaterial({color:0xff7a1e,transparent:true,opacity:0,depthWrite:false}));
+    glow.position.y=SURF+0.55; g.add(glow); s._glow=glow;
+    const flame=new THREE.Mesh(new THREE.CylinderGeometry(0.02,0.38,0.9,10),
+      new THREE.MeshBasicMaterial({color:0xff551e,transparent:true,opacity:0.92,depthWrite:false}));
+    flame.position.y=SURF+0.95; flame.visible=false; g.add(flame); s._flame=flame;
+  } else if(s.def==='wok'){                   // WOK: round bowl on a high-heat ring burner
+    const burner=new THREE.Mesh(new THREE.CylinderGeometry(0.45,0.5,0.12,18),dmat(0x141519,.5,.5)); burner.position.y=SURF+0.07; g.add(burner);
+    const ring=new THREE.Mesh(new THREE.TorusGeometry(0.5,0.04,8,18),dmat(0x8a8f96,.4,.7)); ring.rotation.x=Math.PI/2; ring.position.y=SURF+0.14; g.add(ring);
+    const bowl=new THREE.Mesh(new THREE.SphereGeometry(0.52,16,12,0,TAU,0,Math.PI*0.5),dmat(0x3a3a42,.35,.5)); bowl.position.y=SURF+0.2; bowl.scale.set(1,0.8,1); g.add(bowl);
+    const inner=new THREE.Mesh(new THREE.SphereGeometry(0.44,14,10,0,TAU,0,Math.PI*0.45),dmat(0x2a2a32,.25,.5)); inner.position.y=SURF+0.22; g.add(inner);
+    const glow=new THREE.Mesh(new THREE.SphereGeometry(0.34,12,10),
+      new THREE.MeshBasicMaterial({color:0xff7a1e,transparent:true,opacity:0,depthWrite:false}));
+    glow.position.y=SURF+0.55; g.add(glow); s._glow=glow;
+    const flame=new THREE.Mesh(new THREE.CylinderGeometry(0.02,0.38,0.9,10),
+      new THREE.MeshBasicMaterial({color:0xff551e,transparent:true,opacity:0.92,depthWrite:false}));
+    flame.position.y=SURF+0.95; flame.visible=false; g.add(flame); s._flame=flame;
+  } else if(s.kind==='blend'){                // BLENDER: base unit with glass pitcher + blade disc
+    const base=new THREE.Mesh(new THREE.BoxGeometry(0.8,0.35,0.7),dmat(0x4a4a4a,.5,.35)); base.position.y=SURF+0.18; g.add(base);
+    const pitcher=new THREE.Mesh(new THREE.CylinderGeometry(0.35,0.4,0.8,16),dmat(0xeaf6fc,.2,.15)); pitcher.position.y=SURF+0.75; g.add(pitcher);
+    const lid=new THREE.Mesh(new THREE.CylinderGeometry(0.38,0.38,0.08,16),dmat(0x1a1a1e,.4,.2)); lid.position.y=SURF+1.16; g.add(lid);
+    const knob=new THREE.Mesh(new THREE.SphereGeometry(0.06,8,6),dmat(0xcfd8dd,.3,.5)); knob.position.y=SURF+1.22; g.add(knob);
+    const blade=new THREE.Mesh(new THREE.BoxGeometry(0.3,0.03,0.06),dmat(0xcfd8dd,.3,.8)); blade.position.y=SURF+0.38; g.add(blade);
+    const blade2=new THREE.Mesh(new THREE.BoxGeometry(0.06,0.03,0.3),dmat(0xcfd8dd,.3,.8)); blade2.position.y=SURF+0.38; g.add(blade2);
+  } else if(s.kind==='mix'){                  // MIXER: stand mixer with bowl + whisk
+    const base=new THREE.Mesh(new THREE.BoxGeometry(0.7,0.4,0.6),dmat(0x5a5a5a,.5,.35)); base.position.y=SURF+0.2; g.add(base);
+    const arm=new THREE.Mesh(new THREE.BoxGeometry(0.3,0.15,0.15),dmat(0x4a4a4a,.5,.3)); arm.position.set(0.25,SURF+0.55,0); g.add(arm);
+    const bowl=new THREE.Mesh(new THREE.CylinderGeometry(0.35,0.25,0.35,20),dmat(0xe4dfd2,.5,.1)); bowl.position.set(-0.15,SURF+0.3,0); g.add(bowl);
+    const whiskStem=new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.03,0.35,8),dmat(0xcfd8dd,.3,.7)); whiskStem.position.set(0.25,SURF+0.35,0); g.add(whiskStem);
+    const whiskHead=new THREE.Mesh(new THREE.SphereGeometry(0.12,8,6),dmat(0xcfd8dd,.3,.7)); whiskHead.position.set(0.25,SURF+0.15,0); g.add(whiskHead);
+  } else if(s.def==='mat'){                   // ROLLING MAT: bamboo mat with a rolling pin
+    const mat=new THREE.Mesh(new THREE.BoxGeometry(1.2,0.04,0.9),dmat(0x5a8a4a,.7,.05)); mat.position.y=SURF+0.05; g.add(mat);
+    const lines=new THREE.Mesh(new THREE.BoxGeometry(1.3,0.06,0.06),dmat(0x4a7a3a,.7,.05)); lines.position.y=SURF+0.08; g.add(lines);
+    for(let i=-2;i<=2;i++){ const slat=new THREE.Mesh(new THREE.BoxGeometry(1.2,0.02,0.04),dmat(0x6a9a5a,.7,.05)); slat.position.set(0,SURF+0.06,i*0.15); g.add(slat); }
+    const pin=new THREE.Mesh(new THREE.CylinderGeometry(0.1,0.1,1.1,12),dmat(0xd9b06a,.7,.05)); pin.rotation.x=Math.PI/2; pin.position.set(0.3,SURF+0.16,0); g.add(pin);
+    const pHn1=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.06,0.15,8),dmat(0x8a5a2c,.6,.05)); pHn1.position.set(0.3,SURF+0.16,0.58); g.add(pHn1);
+    const pHn2=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.06,0.15,8),dmat(0x8a5a2c,.6,.05)); pHn2.position.set(0.3,SURF+0.16,-0.58); g.add(pHn2);
+  } else if(s.kind==='foodbank'){             // FOOD BANK: wooden crate with paper order slip
+    const bin=new THREE.Mesh(new THREE.BoxGeometry(1.3,0.5,0.9),dmat(0x8a5a2c,.8,.03)); bin.position.y=SURF+0.25; g.add(bin);
+    const rim=new THREE.Mesh(new THREE.BoxGeometry(1.36,0.1,0.96),dmat(0x6a431f,.8,.03)); rim.position.y=SURF+0.5; g.add(rim);
+    const slip=new THREE.Mesh(new THREE.BoxGeometry(0.5,0.35,0.02),dmat(0xf8f0e0,.5,.05)); slip.position.set(0,SURF+0.55,0.46); g.add(slip);
+    const slipLine=new THREE.Mesh(new THREE.BoxGeometry(0.35,0.03,0.03),dmat(0x3a2a1a,.6,0)); slipLine.position.set(0,SURF+0.6,0.47); g.add(slipLine);
   }
 }
 // a red ✕ that floats over a broken station (billboarded like the signs)
@@ -5688,16 +6699,16 @@ function updateCapBadge(tb){
 function passSlotPos(i){ return { x: PASSD.x + (i-(PASSD.slots-1)/2)*1.3, y:PASSD.top+0.06, z:PASSD.z }; }
 function nearPass(P){ return Math.hypot(PASSD.x-P.pos.x, PASSD.z-P.pos.z) < 2.8; }
 function stagePlate(){                                    // set the carried finished plate down on the pass
-  const c=DAY.carry; if(!c||c.kind!=='plate') return false;
+  const c=DAY.carry; if(!c||(c.kind!=='plate'&&c.kind!=='cup')) return false;
   let idx=-1; for(let i=0;i<PASSD.slots;i++) if(!DAY.passDishes[i]){ idx=i; break; }
   if(idx<0){ toast('PASS IS FULL'); return false; }
-  const m=plateStackMesh(c.items); const p=passSlotPos(idx); m.position.set(p.x,p.y,p.z); scene.add(m);
-  DAY.passDishes[idx]={recipe:c.recipe,items:c.items.slice(),mesh:m}; DAY.carry=null; if(AC)sfx.pickup(); return true;
+  const m=c.kind==='cup'?carryItemMesh(c):plateStackMesh(c.items); const p=passSlotPos(idx); m.position.set(p.x,p.y,p.z); scene.add(m);
+  DAY.passDishes[idx]={recipe:c.recipe,items:(c.items||[]).slice(),kind:c.kind,mesh:m}; DAY.carry=null; if(AC)sfx.pickup(); return true;
 }
 function grabFromPass(P){                                 // pick up the nearest staged plate
   let idx=-1,bd=1e9; for(let i=0;i<PASSD.slots;i++){ const pd=DAY.passDishes[i]; if(!pd)continue; const d=Math.abs(passSlotPos(i).x-P.pos.x); if(d<bd){ bd=d; idx=i; } }
   if(idx<0) return false;
-  const pd=DAY.passDishes[idx]; DAY.carry={kind:'plate',items:pd.items.slice(),recipe:pd.recipe}; scene.remove(pd.mesh); DAY.passDishes[idx]=null; if(AC)sfx.pickup(); return true;
+  const pd=DAY.passDishes[idx]; DAY.carry={kind:pd.kind||'plate',items:pd.items.slice(),recipe:pd.recipe}; scene.remove(pd.mesh); DAY.passDishes[idx]=null; if(AC)sfx.pickup(); return true;
 }
 function makeDiner(cast){
   const g=new THREE.Group();
@@ -5792,7 +6803,7 @@ function updateDiners(dt){
       if(d.hearts<=0){ d.hearts=0; DAY.lost++; grudge(d); toast(d.cast.name+' WALKED OUT'); releaseDiner(d,false); }
     } else if(d.state==='eating'){                                  // sit and enjoy it, THEN leave a dirty plate + free the stool
       d.eatT-=dt;
-      if(d.eatT<=0){ DAY.dirty++; DAY.slotTaken[d.slot]=false; d.state='leaving'; d.tz=ENTRANCE_Z; if(d.bubble) d.bubble.visible=false; }
+      if(d.eatT<=0){ DAY.slotTaken[d.slot]=false; d.state='leaving'; d.tz=ENTRANCE_Z; if(d.bubble) d.bubble.visible=false; }
     } else if(d.state==='leaving'){
       d.z += (d.tz-d.z)*Math.min(1,dt*3.0);
       if(d.z>ENTRANCE_Z-0.25){ scene.remove(d.g); if(d.bubble) scene.remove(d.bubble); DAY.diners.splice(i,1); continue; }
@@ -5850,7 +6861,7 @@ function stationPrompt(s){
   const rawIng = c&&c.kind==='ing'&&c.state==='raw';
   const plate = c&&c.kind==='plate';
   if(s.kind==='crate') act = c?'':'grab';
-  else if(s.kind==='prep'||s.kind==='mash'){ const verb=s.kind==='prep'?'chop':'mash';
+  else if(s.kind==='prep'||s.kind==='mash'){ const verb=s.def==='mat'?'roll':s.kind==='prep'?'chop':'mash';
     if(plate) act = (s.board&&s.board.state!=='raw')?'add to plate':'';
     else if(s.board&&s.board.state==='raw') act='hold to '+verb;
     else if(s.board) act='pick up';
@@ -5869,6 +6880,25 @@ function stationPrompt(s){
     else if(s.plate) act = matchRecipe(s.plate.items)?'take dish':'pick up';
     else act = DAY.cleanPlates>0?'take plate':'no plates'; }
   else if(s.kind==='sink') act = c?'bin':(DAY.dirty>0?'hold to wash':'');
+  else if(s.kind==='blend'){
+    const slotted=s._blendSlots||[];
+    if(s.blendOut){ act = s.blendOut.recipe?'take smoothie':'take'; }
+    else if(c&&c.kind==='cup') act = '';
+    else if(slotted.length>=3) act='hold to blend';
+    else if(rawIng&&c.id==='chocolate') act='add ('+slotted.length+'/3)';
+    else act = slotted.length?'hold to blend':'add chocolate';
+  }
+  else if(s.kind==='mix'){
+    if(s.mixOut){ act = s.mixOut.id==='batter'?'take batter':'take'; }
+    else if(s.mixA&&s.mixB){ act='hold to mix'; }
+    else if(s.mixA){ act='add flour'; }
+    else if(rawIng&&c.id==='egg') act='add egg';
+    else act='add egg first';
+  }
+  else if(s.kind==='foodbank'){
+    if(s._request){ act = c?(c.id===s._request.id?'deposit':'wrong item'):('need: '+INGREDIENTS[s._request.id].name); }
+    else act='';
+  }
   return '<span class="pname">'+name+'</span>'+(act?'<span class="pact">'+act+'</span>':'');
 }
 // drive the big HUD pop-up: counter action if a diner's in reach, else the
@@ -5883,9 +6913,9 @@ function dayPrompt(P){
   let html=null;
   if(dR) html='<span class="pname">GREET</span><span class="pact">'+dR.cast.name+'</span>';
   else if(dO && dO.bad) html='<span class="pname">'+dO.cast.name+'</span><span class="pact">wants '+dO.cast.bad+' — wave off</span>';
-  else if(dO && !dO.bad && DAY.carry && DAY.carry.kind==='plate') html='<span class="pname">SERVE</span><span class="pact">'+dO.cast.name+'</span>';
+  else if(dO && !dO.bad && DAY.carry && (DAY.carry.kind==='plate'||DAY.carry.kind==='cup')) html='<span class="pname">SERVE</span><span class="pact">'+dO.cast.name+'</span>';
   else if(nearPass(P)){ const c=DAY.carry;
-    if(c && c.kind==='plate') html='<span class="pname">PASS</span><span class="pact">set plate down</span>';
+    if(c && (c.kind==='plate'||c.kind==='cup')) html='<span class="pname">PASS</span><span class="pact">set plate down</span>';
     else if(!c && DAY.passDishes.some(Boolean)) html='<span class="pname">PASS</span><span class="pact">pick up a plate</span>';
     else if(s) html=stationPrompt(s); else html='<span class="pname">PASS</span>'; }
   else if(s) html=stationPrompt(s);
@@ -5942,10 +6972,10 @@ function tipTier(h){ h=clamp(h,0,1);
 }
 function serveDiner(P,d){
   const c=DAY.carry;
-  if(!c||c.kind!=='plate') return;
+  if(!c||(c.kind!=='plate'&&c.kind!=='cup')) return;
   if(d.bad){ toast(d.cast.name+' WANTS '+d.cast.bad+' — WAVE THEM OFF'); return; }   // can't make it; don't waste the plate
-  const rk=c.recipe||matchRecipe(c.items);
-  if(rk!==d.dish){ toast(rk?'WRONG ORDER':'PLATE ISN’T FINISHED'); DAY.combo=0; return; }   // breaks the streak, keeps the plate
+  const rk=c.recipe||(c.kind==='plate'?matchRecipe(c.items):null);
+  if(rk!==d.dish){ toast(rk?'WRONG ORDER':(c.kind==='cup'?'NOT THAT DRINK':'PLATE ISN\'T FINISHED')); DAY.combo=0; return; }   // breaks the streak, keeps the plate
   const base=RECIPES[d.dish].pay;
   DAY.combo++; DAY.best=Math.max(DAY.best,DAY.combo);
   const mult=Math.min(4, 1+(DAY.combo-1)*0.5);                        // Overcooked-style streak, capped x4
@@ -5955,6 +6985,8 @@ function serveDiner(P,d){
   DAY.cash+=pay; DAY.served++; DAY.carry=null;
   const wp=new V3(d.x,1.9,d.z-0.5); popWord(wp, tier.name+' $'+pay, tier.col, 30);
   if(AC){ sfx.pickup(); drum('ride',0.7); } burst(new V3(d.x,1.4,d.z),8,COL.cream,0.7);   // order-up ding = ride bell
+  // Plate return timer: plate doesn't instantly become dirty — it queues for return
+  if(c.kind==='plate'){ DAY.returningPlates.push({t:DAY.plateReturnTime, count:1}); }
   d.state='eating'; d.eatT=1.9; setBubble(d,'YUM','good');   // they sit and eat; the dirty plate + freed stool come when they leave
 }
 // a plate (disc + a small mound per component, coloured by its ingredient)
@@ -5976,6 +7008,10 @@ function carryItemMesh(c){
     else { for(let i=0;i<6;i++){ const cube=new THREE.Mesh(new THREE.BoxGeometry(0.14,0.14,0.14),dmat(c.state==='burnt'?0x241812:ing.col,.75,0)); cube.position.set((i%2?0.11:-0.11),0.02+((i%3)*0.1),((i>>1)%2?0.09:-0.09)); g.add(cube); } }
     return g; }
   if(c.kind==='plate'){ return plateStackMesh(c.items); }
+  if(c.kind==='cup'){ const g=new THREE.Group();
+    const cup=new THREE.Mesh(new THREE.CylinderGeometry(0.22,0.18,0.5,16),dmat(0xeaf6fc,.25,.15)); g.add(cup);
+    const inner=new THREE.Mesh(new THREE.CylinderGeometry(0.18,0.14,0.08,14),dmat(0x5a3020,.8,0)); inner.position.y=0.22; g.add(inner);
+    return g; }
   return null;
 }
 // keep the plating station's on-counter plate mesh in sync with s.plate
@@ -6077,6 +7113,35 @@ function stationAct(P,s){
     else if(!c && s.held){ DAY.carry=s.held; s.held=null; syncCounterMesh(s); if(AC)sfx.pickup(); }
   }
   else if(s.kind==='sink'){ if(c){ DAY.carry=null; toast('BINNED'); } }                 // tap w/ carry = trash it; empty = hold to wash
+  else if(s.kind==='blend'){
+    // BLENDER: tap to add chocolate (up to 3), tap to take finished smoothie
+    if(s.blendOut){ DAY.carry=s.blendOut; s.blendOut=null; updateCarryMesh(); if(AC)sfx.pickup(); }
+    else if(ing && c.id==='chocolate' && c.state==='raw'){
+      s._blendSlots=s._blendSlots||[];
+      if(s._blendSlots.length<3){ s._blendSlots.push(c.id); DAY.carry=null; if(AC)sfx.pickup(); }
+      else toast('BLENDER FULL');
+    } else if(ing) toast('NEED CHOCOLATE');
+  }
+  else if(s.kind==='mix'){
+    // MIXER: tap to add egg, then flour, then take mixed batter
+    if(s.mixOut){ DAY.carry={kind:'ing', id:'batter', state:'mixed'}; s.mixOut=null; updateCarryMesh(); if(AC)sfx.pickup(); }
+    else if(ing && c.id==='egg' && c.state==='chopped' && !s.mixA){ s.mixA=c.id; DAY.carry=null; if(AC)sfx.pickup(); }
+    else if(ing && c.id==='flour' && c.state==='chopped' && s.mixA && !s.mixB){ s.mixB=c.id; DAY.carry=null; if(AC)sfx.pickup(); }
+    else if(ing) toast(s.mixA?'ADD CHOPPED FLOUR':'ADD CHOPPED EGG FIRST');
+  }
+  else if(s.kind==='foodbank'){
+    // FOOD BANK: deposit matching ingredient for bonus $25
+    if(!s._request){
+      const avail=STATIONS.filter(st=>st.kind==='crate'&&st.ingredient).map(st=>st.ingredient);
+      s._request=avail.length?{id:pick(avail), state:'raw'}:{id:pick(Object.keys(INGREDIENTS)), state:'raw'};
+    }
+    if(ing && c.id===s._request.id && c.state===s._request.state){
+      DAY.cash+=25; DAY.carry=null; toast('DELIVERED +$25');
+      const avail=STATIONS.filter(st=>st.kind==='crate'&&st.ingredient).map(st=>st.ingredient);
+      s._request=avail.length?{id:pick(avail), state:'raw'}:{id:pick(Object.keys(INGREDIENTS)), state:'raw'};
+      if(AC)sfx.pickup();
+    } else if(ing) toast('WRONG ITEM — NEED '+INGREDIENTS[s._request.id].name);
+  }
 }
 function cookVerbs(P,pad,dt){
   const s=nearestStation(P);
@@ -6084,7 +7149,7 @@ function cookVerbs(P,pad,dt){
   // button -- circle / 'e' / the on-screen COOK) does the work that takes time:
   // chop & mash on a board, wash at the sink, douse a fire.
   const act=(pad&&pad.actionHeld)||KEY['e']||TOUCH.cookHeld;
-  if(s && (s.kind==='prep'||s.kind==='mash') && !s.broken && act && s.board && s.board.state==='raw'){
+  if(s && (s.kind==='prep'||s.kind==='mash') && s.def!=='mat' && !s.broken && act && s.board && s.board.state==='raw'){
     s.board.prog=(s.board.prog||0)+dt;
     s._chopping=0.09;                                 // flag for the knife-bob animation in updateDay
     // chop = snare, on a steady rhythm as the knife bobs (not every frame). mash
@@ -6100,6 +7165,31 @@ function cookVerbs(P,pad,dt){
     DAY.washT+=dt; if(DAY.washT>=0.55){ DAY.washT=0; DAY.dirty--; DAY.cleanPlates++; if(AC){ sfx.pickup(); drum('hihat',0.3); } }
   } else if(s && s.kind==='cook' && s.item && s.item.state==='fire' && act){
     s.item._out=(s.item._out||0)+dt; if(s.item._out>=1.3){ s.item=null; toast('FIRE OUT'); if(AC)sfx.pickup(); }
+  } else if(s && s.kind==='blend' && !s.broken && act && (s._blendSlots||[]).length>=3 && !s.blendOut){
+    s._blendProg=(s._blendProg||0)+dt;
+    s._blendBeat=(s._blendBeat||0)-dt;
+    if(s._blendBeat<=0){ s._blendBeat=0.14; if(AC) drum('snare',0.28,0.9); }
+    // progress bar for blend
+    if(!s._track && s._g){ const track=new THREE.Mesh(new THREE.BoxGeometry(0.74,0.13,0.09), new THREE.MeshBasicMaterial({color:0x140d07})); track.position.set(0,SURF+0.92,0); if(track.renderOrder!==undefined) track.renderOrder=1199; s._g.add(track); s._track=track; const bar=new THREE.Mesh(new THREE.BoxGeometry(0.7,0.1,0.1), new THREE.MeshBasicMaterial({color:0x49d05a})); if(bar.geometry&&bar.geometry.translate) bar.geometry.translate(0.35,0,0); bar.position.set(-0.35,SURF+0.92,0.01); if(bar.renderOrder!==undefined) bar.renderOrder=1200; s._g.add(bar); s._progBar=bar; }
+    if(s._progBar&&s._progBar.scale&&s._progBar.scale.set) s._progBar.scale.set(clamp(s._blendProg/(PREP_TIME*1.2),0.02,1),1,1);
+    if(s._track) s._track.visible=true; if(s._progBar) s._progBar.visible=true;
+    if(s._blendProg>=PREP_TIME*1.2){ s.blendOut={kind:'cup', recipe:'smoothie', items:[{id:'chocolate',state:'blended'}]}; s._blendSlots=[]; s._blendProg=0; if(s._track)s._track.visible=false; if(s._progBar)s._progBar.visible=false; if(AC){ sfx.pickup(); drum('snare',0.4); } }
+  } else if(s && s.kind==='mix' && !s.broken && act && s.mixA && s.mixB && !s.mixOut){
+    s._mixProg=(s._mixProg||0)+dt;
+    s._mixBeat=(s._mixBeat||0)-dt;
+    if(s._mixBeat<=0){ s._mixBeat=0.16; if(AC) drum('snare',0.3,0.85); }
+    // progress bar for mix
+    if(!s._track && s._g){ const track=new THREE.Mesh(new THREE.BoxGeometry(0.74,0.13,0.09), new THREE.MeshBasicMaterial({color:0x140d07})); track.position.set(0,SURF+0.92,0); if(track.renderOrder!==undefined) track.renderOrder=1199; s._g.add(track); s._track=track; const bar=new THREE.Mesh(new THREE.BoxGeometry(0.7,0.1,0.1), new THREE.MeshBasicMaterial({color:0x49d05a})); if(bar.geometry&&bar.geometry.translate) bar.geometry.translate(0.35,0,0); bar.position.set(-0.35,SURF+0.92,0.01); if(bar.renderOrder!==undefined) bar.renderOrder=1200; s._g.add(bar); s._progBar=bar; }
+    if(s._progBar&&s._progBar.scale&&s._progBar.scale.set) s._progBar.scale.set(clamp(s._mixProg/(PREP_TIME*1.3),0.02,1),1,1);
+    if(s._track) s._track.visible=true; if(s._progBar) s._progBar.visible=true;
+    if(s._mixProg>=PREP_TIME*1.3){ s.mixOut={id:'batter',state:'mixed'}; s.mixA=null; s.mixB=null; s._mixProg=0; if(s._track)s._track.visible=false; if(s._progBar)s._progBar.visible=false; if(AC){ sfx.pickup(); drum('snare',0.4); } }
+  } else if(s && s.def==='mat' && !s.broken && act && s.board && s.board.state==='raw'){
+    // rolling mat: same as prep but uses roll process
+    s.board.prog=(s.board.prog||0)+dt;
+    s._chopping=0.09;
+    s._chopBeat=(s._chopBeat||0)-dt;
+    if(s._chopBeat<=0){ s._chopBeat=0.16; if(AC) drum('snare',0.32,0.82); }
+    if(s.board.prog>=PREP_TIME){ s.board.state='rolled'; s.board.prog=0; s._chopping=0; syncBoardMesh(s); if(AC){ sfx.pickup(); drum('snare',0.4); } }
   } else { DAY.washT=0; if(s){ s._chopBeat=0; s._washBeat=0; } }
   // EDGE action: the one context interact. At the counter it greets / serves /
   // shoos; at a station it grabs / places / plates / trashes.
@@ -6111,11 +7201,11 @@ function cookVerbs(P,pad,dt){
   if(d){
     if(d.state==='ready'){ if(!DAY.carry){ takeOrder(d); return; } }          // greet -> they order
     else if(d.bad){ if(!DAY.carry){ waveOff(d); return; } }                   // off-menu -> shoo
-    else if(DAY.carry && DAY.carry.kind==='plate'){ serveDiner(P,d); return; } // run the plate to their table
+    else if(DAY.carry && (DAY.carry.kind==='plate'||DAY.carry.kind==='cup')){ serveDiner(P,d); return; } // run the plate to their table
   }
   // the PASS: set a finished plate down to stage it, or pick one back up
   if(nearPass(P)){
-    if(DAY.carry && DAY.carry.kind==='plate'){ stagePlate(); return; }
+    if(DAY.carry && (DAY.carry.kind==='plate'||DAY.carry.kind==='cup')){ stagePlate(); return; }
     if(!DAY.carry && DAY.passDishes.some(Boolean)){ grabFromPass(P); return; }
   }
   if(s) stationAct(P,s);
@@ -6357,7 +7447,7 @@ function updatePlan(dt){
   if(PASSD._sign) PASSD._sign.quaternion.copy(camera.quaternion);
 }
 
-function carrySig(c){ return !c?'':c.kind==='ing'?('ing'+c.id+c.state):('plate'+(c.items||[]).map(compKey).join(',')); }
+function carrySig(c){ return !c?'':c.kind==='ing'?('ing'+c.id+c.state):c.kind==='cup'?('cup'+(c.recipe||'')):('plate'+(c.items||[]).map(compKey).join(',')); }
 function updateCarryMesh(){
   const c=DAY.carry, sig=carrySig(c);
   if(sig!==DAY._carrySig){
@@ -6388,7 +7478,7 @@ function renderDayHUD(){
     const shown=DAY.diners.filter(d=>d.state==='reading'||d.state==='ready'||d.state==='ordered').sort((a,b)=>a.slot-b.slot);
     // the plate in hand answers one ticket — light it up so the run-out reads
     // at a glance (Overcooked: every ticket must be instantly scannable)
-    const plRk = DAY.carry && DAY.carry.kind==='plate' ? (DAY.carry.recipe||matchRecipe(DAY.carry.items)) : null;
+    const plRk = DAY.carry && (DAY.carry.kind==='plate'||DAY.carry.kind==='cup') ? (DAY.carry.recipe||(DAY.carry.kind==='plate'?matchRecipe(DAY.carry.items):null)) : null;
     rail.innerHTML=shown.map(d=>{
       const f=clamp(d.hearts,0,1); const col=f>0.5?'#49d05a':f>0.25?'#e3b53a':'#ff3b30';
       let cls='', order, showBar=true;
@@ -6405,6 +7495,7 @@ function renderDayHUD(){
   if(car){ const c=DAY.carry;
     if(c){ car.classList.add('on');
       if(c.kind==='ing'){ const nm=(INGREDIENTS[c.id]||{name:'?'}).name; car.textContent='CARRYING: '+(c.state!=='raw'?c.state.toUpperCase()+' ':'')+nm; }
+      else if(c.kind==='cup'){ const rk=c.recipe; car.textContent=rk?('CUP: '+RECIPES[rk].name+' → SERVE'):'CUP: smoothie'; }
       else { const rk=c.recipe||matchRecipe(c.items);
         // serve-loop guidance: a finished dish either answers an open ticket
         // (run it out) or waits on the pass — say which, PlateUp-style
@@ -6416,7 +7507,7 @@ function dayCleanup(){
   DAY.on=false;
   for(const d of DAY.diners){ scene.remove(d.g); if(d.bubble) scene.remove(d.bubble); }
   DAY.diners.length=0; DAY.slotTaken=new Array(SEATS.length).fill(false);
-  for(const s of STATIONS){ if(s.kind==='cook'){ s.item=null; if(s._flame)s._flame.visible=false; if(s._glow)s._glow.material.opacity=0; } if(s.kind==='plate'){ s.plate=null; syncStationPlate(s); } if(s.kind==='counter'){ s.held=null; syncCounterMesh(s); } if(s.kind==='prep'||s.kind==='mash'){ s.board=null; syncBoardMesh(s); } }
+  for(const s of STATIONS){ if(s.kind==='cook'){ s.item=null; if(s._flame)s._flame.visible=false; if(s._glow)s._glow.material.opacity=0; } if(s.kind==='plate'){ s.plate=null; syncStationPlate(s); } if(s.kind==='counter'){ s.held=null; syncCounterMesh(s); } if(s.kind==='prep'||s.kind==='mash'){ s.board=null; syncBoardMesh(s); } if(s.kind==='blend'){ s._blendSlots=[]; s.blendOut=null; s._blendProg=0; } if(s.kind==='mix'){ s.mixA=null; s.mixB=null; s.mixOut=null; s._mixProg=0; } }
   for(const pd of DAY.passDishes){ if(pd&&pd.mesh) scene.remove(pd.mesh); } DAY.passDishes.length=0;
   DAY.carry=null; updateCarryMesh();
   if(_magBubble){ _magBubble.visible=false; _magDef=null; }
@@ -6444,9 +7535,9 @@ function startDay(){
   DAY.readyHold=READY_HOLD*(1+0.35*upLvl('grip'));          // 'steady burners' widens the green window
   DAY.cash=0; DAY.served=0; DAY.lost=0; DAY.shooed=0; DAY.combo=0; DAY.best=0;
   DAY.ledger.length=0;
-  DAY.cleanPlates=6+2*upLvl('plates'); DAY.dirty=0; DAY.diners.length=0; DAY.slotTaken=new Array(SEATS.length).fill(false);
+  DAY.cleanPlates=6+2*upLvl('plates'); DAY.dirty=0; DAY.returningPlates=[]; DAY.diners.length=0; DAY.slotTaken=new Array(SEATS.length).fill(false);
   DAY.carry=null; DAY.spawnT=1.4; DAY.washT=0; updateCarryMesh();
-  for(const s of STATIONS){ if(s.kind==='cook') s.item=null; if(s.kind==='plate'){ s.plate=null; syncStationPlate(s); } if(s.kind==='counter'){ s.held=null; syncCounterMesh(s); } if(s.kind==='prep'||s.kind==='mash'){ s.board=null; syncBoardMesh(s); } }
+  for(const s of STATIONS){ if(s.kind==='cook') s.item=null; if(s.kind==='plate'){ s.plate=null; syncStationPlate(s); } if(s.kind==='counter'){ s.held=null; syncCounterMesh(s); } if(s.kind==='prep'||s.kind==='mash'){ s.board=null; syncBoardMesh(s); } if(s.kind==='blend'){ s._blendSlots=[]; s.blendOut=null; s._blendProg=0; } if(s.kind==='mix'){ s.mixA=null; s.mixB=null; s.mixOut=null; s._mixProg=0; } if(s.kind==='foodbank'){ s._request=null; } }
   for(const pd of DAY.passDishes){ if(pd&&pd.mesh) scene.remove(pd.mesh); } DAY.passDishes.length=0;
   dayScene(true);                                          // bright daytime lights + hide the night decor
   document.body.classList.add("cookmode");
@@ -6515,6 +7606,11 @@ function updateDay(dt){
   if(DAY.t>0){ DAY.spawnT-=dt; if(DAY.spawnT<=0 && freeSlot()>=0){ spawnDiner(); DAY.spawnT=rand(SPAWN_MIN,SPAWN_MAX)*DAY.spawnMul; } }
   updateDiners(dt);
   tickCooks(dt);
+  // returning plates timer: decrement, then become dirty when timer hits 0
+  for(let i=DAY.returningPlates.length-1;i>=0;i--){
+    DAY.returningPlates[i].t-=dt;
+    if(DAY.returningPlates[i].t<=0){ DAY.dirty+=DAY.returningPlates[i].count; DAY.returningPlates.splice(i,1); }
+  }
   updateCarryMesh();
   chopAnim(dt);
   for(const s of STATIONS){ if(s._sign) s._sign.quaternion.copy(camera.quaternion); if(s._xmark&&s._xmark.visible) s._xmark.quaternion.copy(camera.quaternion); }   // signs face the fixed cam
@@ -6624,11 +7720,32 @@ function tick(){
     resolveBodies();                                 // hard body-to-body collision
     // reap
     for(let i=enemies.length-1;i>=0;i--) if(enemies[i]._remove) enemies.splice(i,1);
-    // win: all waves spawned and nobody left standing (frame-timed so it can't be missed)
-    if(!ended && WAVE.done && enemies.every(e=>e.dead)){
-      WAVE.winT=(WAVE.winT||0)+dt;
-      if(WAVE.winT>0.7) endNight(true);
-    } else WAVE.winT=0;
+    if(GAME.store){
+      // GROCERY STORE: the clock owns the run — shoppers are a hazard, not the
+      // goal; clearing the stock ends it early (a full pantry).
+      SRUN.t-=sdt;
+      const now=Math.ceil(SRUN.t);
+      if(now<=15 && now<SRUN._warn){ SRUN._warn=now; if(now%5===0) toast('T-'+now+'s'); }
+      if(SRUN.t<=0){ SRUN.t=0; storeEnd(true); }
+      else if(SRUN.total>0 && SRUN.collected>=SRUN.total) storeEnd(true);
+      else updateStoreHUD();
+    } else if(GAME.locale && PLAY_LOCALES[GAME.locale]){
+      // LOCALE RUN (city street / ocean front): the clock owns the run — the
+      // mob is a hazard, not the goal; clearing the stock ends it early.
+      const L=PLAY_LOCALES[GAME.locale];
+      LRUN.t-=sdt;
+      const now=Math.ceil(LRUN.t);
+      if(now<=15 && now<LRUN._warn){ LRUN._warn=now; if(now%5===0) toast('T-'+now+'s'); }
+      if(LRUN.t<=0){ LRUN.t=0; localeEnd(L,true); }
+      else if(LRUN.total>0 && LRUN.collected>=LRUN.total) localeEnd(L,true);
+      else updateLocaleHUD(L);
+    } else {
+      // win: all waves spawned and nobody left standing (frame-timed so it can't be missed)
+      if(!ended && WAVE.done && enemies.every(e=>e.dead)){
+        WAVE.winT=(WAVE.winT||0)+dt;
+        if(WAVE.winT>0.7) endNight(true);
+      } else WAVE.winT=0;
+    }
   } else if(GAME.mode==='day'){
     if(!GAME.menuOpen){ updatePlayer(sdt, pad); updateDay(sdt); }   // recipe cards freeze the shift
   } else if(GAME.mode==='plan'){
