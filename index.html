@@ -3516,7 +3516,8 @@ function updatePlayer(dt, pad, actor){
   const jumpHeld=pad.actionHeld||(!REMOTE&&!!KEY[' ']);               // hold SPACE = full height (variable jump)
   const jumpCan=P.jumpCD<=0 && P.stagger<=0 && !P.tackle && !P.attack; // can't jump-cancel a swing
   if(Engine.move.jump(P, dt, { grounded, wantJump, jumpHeld, canJump:jumpCan,
-      moving:mv.lengthSq()>0.02, mvx:mv.x, mvz:mv.z, facing:P.facing })) sfx.step();
+      moving:mv.lengthSq()>0.02, mvx:mv.x, mvz:mv.z, facing:P.facing })){ sfx.step(); P._jumpArm=0.5; }   // 0.5s window: a heavy now becomes a full jump-slam
+  if((P._jumpArm||0)>0) P._jumpArm=Math.max(0,P._jumpArm-dt);
 
   // ----- GRAB: pick up a utensil you're standing on, else tackle-charge a person -----
   // Reach is 2.0, not the old 1.0: the weapons sit ON TOP of the pass counter,
@@ -3640,9 +3641,11 @@ function updatePlayer(dt, pad, actor){
     // the fall HOMES onto them so you land on top -- but they can block or move.
     let tgt=P.lockOn||nearestEnemy(P.pos,P.facing,null);
     const near=tgt && !tgt.dead && Math.hypot(tgt.pos.x-P.pos.x,tgt.pos.z-P.pos.z)<6.0;
-    P.slam={ tgt: near?tgt:null };
+    const fromJump=(P._jumpArm||0)>0;                        // heavy within 0.5s of a jump -> ride the arc up then slam down; else a committed mid-air dive
+    P.slam={ tgt: near?tgt:null, fromJump, peak:Math.max(0.6, P.pos.y-restY(P.pos.x,P.pos.z,P.pos.y,P.r)) };
     if(P.slam.tgt) P.facing=Math.atan2(P.slam.tgt.pos.x-P.pos.x, P.slam.tgt.pos.z-P.pos.z);
-    P.vy=Math.min(P.vy,-5); P.attack=null; sfx.whiff();      // commit the drop
+    if(!fromJump) P.vy=Math.min(P.vy,-5);                    // mid-air: commit the hard drop. from a fresh jump: let the jump arc play, slam resolves on landing
+    P.attack=null; sfx.whiff();
   } else if((wantLight||wantHeavy) && !P.slam && !P.dodge && !P.tackle && P.stagger<=0){
     // LIGHT in the air = a lateral aerial swing (just a normal attack while you
     // fall); on the ground, normal light/heavy. (Heavy-in-air was caught above.)
@@ -3771,7 +3774,7 @@ function updatePlayer(dt, pad, actor){
         if(landV<-5){ shake(0.12); }             // a little thump on a hard landing
         // a jump pressed just before touchdown fires the moment we land (buffered)
         if(Engine.move.tryBufferedJump(P, { canJump:P.jumpCD<=0 && P.stagger<=0 && !P.tackle && !P.attack,
-            moving:mv.lengthSq()>0.02, mvx:mv.x, mvz:mv.z, facing:P.facing })) sfx.step();
+            moving:mv.lengthSq()>0.02, mvx:mv.x, mvz:mv.z, facing:P.facing })){ sfx.step(); P._jumpArm=0.5; }
       }
     }
   }
@@ -4193,6 +4196,7 @@ const MIXAMO_SRC = {
   atk_light:'anims/atk_light.fbx', atk_heavy:'anims/atk_heavy.fbx', atk_bat:'anims/mo_baseball_strike.fbx',
   atk_sword:'anims/mo_two_hand_sword_combo.fbx',  atk_sword_L:'anims/mo_two_hand_sword_combo-2.fbx',
   atk_shield:'anims/mo_sword_and_shield_attack.fbx', atk_shield_L:'anims/mo_sword_and_shield_attack-2.fbx',
+  atk_slam:'anims/mo_standing_melee_run_jump_attack.fbx', atk_slam_L:'anims/mo_standing_melee_run_jump_attack-2.fbx',   // jump-attack = overhead slam
   // melee weapon-carry stance (great sword) -- every held melee weapon idles/moves blade-ready
   sword_idle:'anims/mo_great_sword_idle.fbx',       sword_idle_L:'anims/mo_great_sword_idle-2.fbx',
   sword_walk:'anims/mo_great_sword_walk.fbx',
@@ -4212,10 +4216,15 @@ const LIGHT_COMBOS=['c_jab','c_jabcross','c_hook','c_quad','c_punch'];
 const HEAVY_COMBOS=['h_box','h_knee','h_elbow','h_melee','h_melee2','h_melee3'];
 const IDLE_VARIANTS=['idle','idle_breathe','idle_fight'];
 // one-shots (scrubbed by game progress); everything else loops
-const MIXAMO_ONESHOT = { atk_light:1,atk_heavy:1,atk_bat:1,atk_sword:1,atk_sword_L:1,atk_shield:1,atk_shield_L:1,
+const MIXAMO_ONESHOT = { atk_light:1,atk_heavy:1,atk_bat:1,atk_sword:1,atk_sword_L:1,atk_shield:1,atk_shield_L:1,atk_slam:1,atk_slam_L:1,
   c_jab:1,c_jab_L:1,c_jabcross:1,c_jabcross_L:1,c_hook:1,c_hook_L:1,c_quad:1,c_quad_L:1,c_punch:1,c_punch_L:1,
   h_box:1,h_box_L:1,h_knee:1,h_knee_L:1,h_elbow:1,h_melee:1,h_melee_L:1,h_melee2:1,h_melee3:1,
-  throw:1,throw_obj:1,toss:1,toss_gren:1,shoot:1,hit:1,react_big:1,react_big_L:1,death:1,death_walk:1 };
+  throw:1,throw_obj:1,toss:1,toss_gren:1,shoot:1,hit:1,react_big:1,react_big_L:1,death:1,death_walk:1,
+  jump:1,sword_jump:1,sword_jump_L:1 };
+// jump/slam clip phase fractions -- where the key beats sit in the mocap; tune after seeing them in-game
+const JUMP_LAUNCH_FRAC=0.16;   // skip the jump clip's ground crouch (airborne starts here)
+const SLAM_STRIKE_FRAC=0.78;   // where the downswing contacts the ground in the jump-attack clip
+const SLAM_WINDUP_FRAC=0.42;   // where the overhead descent begins (a mid-air dive skips straight to here)
 // left-handed (male chef) picks the mirrored (_L) clip when one exists
 function mir(a,name){ return (a&&a.chef&&a.chef.userData&&a.chef.userData.whand===0 && MIXAMO.clips[name+'_L']) ? name+'_L' : name; }
 // move direction relative to facing -> '' (fwd) / '_b' / '_l' / '_r'
@@ -4549,8 +4558,12 @@ function actionName(a){
   if(a.dodge) return (a._dodgeSign<0 && MIXAMO.clips.dodge_r)?'dodge_r':'dodge';
   if((a.stagger||0)>0.55 && MIXAMO.clips.react_big) return mir(a,'react_big');
   if((a.stagger||0)>0.28 && MIXAMO.clips.hit) return 'hit';
-  // AIRBORNE: jumping / falling -> jump clip (melee carries the great-sword jump)
-  if(a.pos && a.pos.y > restY(a.pos.x,a.pos.z,a.pos.y,a.r||0.4)+0.06){
+  const airborne = a.pos && a.pos.y > restY(a.pos.x,a.pos.z,a.pos.y,a.r||0.4)+0.06;
+  // JUMP ATTACK = overhead slam (aerial heavy): winds up through the fall, strikes on landing.
+  // Separate from a.attack (the slam nulls it) and from a plain hop.
+  if(((a.slam && a.slam.peak!=null) || (a.slamHit||0)>0) && MIXAMO.clips.atk_slam) return mir(a,'atk_slam');   // .peak marks the player's aerial slam (enemy ground-pounds don't carry it)
+  // AIRBORNE (no attack): plain jump; a held melee weapon carries the great-sword jump.
+  if(airborne){
     const jw=WEAPONS[a.wpn]||{};
     if(a.wpn && a.wpn!=='fists' && !jw.ranged && MIXAMO.clips.sword_jump) return mir(a,'sword_jump');
     if(MIXAMO.clips.jump) return 'jump';
@@ -4581,6 +4594,23 @@ function actionName(a){
 }
 // normalized progress for a scrubbed one-shot (attack clips scrub to the attack clock)
 function actionProgress(a,name){
+  // JUMP: scrub the clip to the vertical arc (launch -> apex -> land) via vy.
+  if(name==='jump'||name==='sword_jump'||name==='sword_jump_L'){
+    const V=(Engine.move&&Engine.move.JUMP_V)||7.8;
+    const arc=clamp(0.5-0.5*((a.vy||0)/V),0,1);                       // 0 launch, .5 apex, 1 land
+    return JUMP_LAUNCH_FRAC + arc*(1-JUMP_LAUNCH_FRAC);               // skip the clip's ground crouch
+  }
+  // SLAM: wind up through the fall, strike frame on ground contact, then recover.
+  if(name==='atk_slam'||name==='atk_slam_L'){
+    if((a.slamHit||0)>0) return SLAM_STRIKE_FRAC + (1-(a.slamHit||0)/SLAM_HIT)*(1-SLAM_STRIKE_FRAC);   // impact -> recover
+    if(a.slam){
+      if(a.slam.fromJump){ const V=(Engine.move&&Engine.move.JUMP_V)||7.8;                             // ground combo: ride the full jump arc
+        return clamp(0.5-0.5*((a.vy||0)/V),0,1)*SLAM_STRIKE_FRAC; }
+      const h=(a.pos.y-restY(a.pos.x,a.pos.z,a.pos.y,a.r||0.4)), peak=a.slam.peak||1;                  // mid-air dive: descent from the trigger height
+      return SLAM_WINDUP_FRAC + clamp(1-h/peak,0,1)*(SLAM_STRIKE_FRAC-SLAM_WINDUP_FRAC);
+    }
+    return SLAM_WINDUP_FRAC;
+  }
   const combat = a.attack && (/^c_|^h_|^atk_/.test(name) || name==='shoot');
   if(combat){ const A=a.attack; return A?clamp(A.t/Math.max(A.dur,1e-3),0,1):0; }
   if(/^throw|^toss/.test(name)) return clamp(a._tossT||0,0,1);
