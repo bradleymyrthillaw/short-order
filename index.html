@@ -4197,6 +4197,7 @@ const MIXAMO_SRC = {
   sword_idle:'anims/mo_great_sword_idle.fbx',       sword_idle_L:'anims/mo_great_sword_idle-2.fbx',
   sword_walk:'anims/mo_great_sword_walk.fbx',
   sword_strafe_l:'anims/mo_great_sword_strafe.fbx', sword_strafe_r:'anims/mo_great_sword_strafe-2.fbx',   // -2 is the mirror; if L/R read reversed in-game, swap these two
+  sword_jump:'anims/mo_great_sword_jump.fbx',       sword_jump_L:'anims/mo_great_sword_jump-2.fbx',
   // gun / spud gun
   aim:'anims/aim.fbx', shoot:'anims/shoot.fbx', gun_reload:'anims/mo_reloading.fbx',
   gun_run:'anims/mo_rifle_run.fbx', gun_strafe_l:'anims/mo_strafe_left.fbx', gun_strafe_r:'anims/mo_strafe_right.fbx', gun_back:'anims/mo_walking_backwards.fbx',
@@ -4538,17 +4539,22 @@ function actionName(a){
   if(a.attack){ const w=WEAPONS[a.attack.wpn]||{}, wk=a.attack.wpn;
     if(a._atkRef!==a.attack){ a._atkRef=a.attack; a._comboIdx=(a._comboIdx||0)+1; }   // advance the pool on EVERY new swing (don't depend on perfect chaining)
     const ci=a._comboIdx||0;
-    if(gun) return 'shoot';
-    if(wk==='bat'||wk==='frozenmeat'||wk==='rollingpin'||wk==='pan') return 'atk_bat';
-    if(wk==='knife'||wk==='cleaver') return mir(a,'atk_sword');
-    if(a.attack.heavy||w.cls==='heavy'||w.cls==='medium') return mir(a, HEAVY_COMBOS[ci%HEAVY_COMBOS.length]);
-    if(wk==='fists'||!w.cls||w.cls==='light') return mir(a, LIGHT_COMBOS[ci%LIGHT_COMBOS.length]);
-    return 'atk_light';
+    if(gun||w.ranged) return 'shoot';
+    // UNARMED ONLY: bare hands throw the punch combos (light + heavy pools)
+    if(wk==='fists'||!wk){ const pool=(a.attack.heavy||w.cls==='heavy'||w.cls==='medium')?HEAVY_COMBOS:LIGHT_COMBOS; return mir(a, pool[ci%pool.length]); }
+    // ARMED MELEE: every held weapon swings the two-hand blade combo
+    return mir(a,'atk_sword');
   }
   if(a._tossing) return MIXAMO.clips.throw?'throw':null;
   if(a.dodge) return (a._dodgeSign<0 && MIXAMO.clips.dodge_r)?'dodge_r':'dodge';
   if((a.stagger||0)>0.55 && MIXAMO.clips.react_big) return mir(a,'react_big');
   if((a.stagger||0)>0.28 && MIXAMO.clips.hit) return 'hit';
+  // AIRBORNE: jumping / falling -> jump clip (melee carries the great-sword jump)
+  if(a.pos && a.pos.y > restY(a.pos.x,a.pos.z,a.pos.y,a.r||0.4)+0.06){
+    const jw=WEAPONS[a.wpn]||{};
+    if(a.wpn && a.wpn!=='fists' && !jw.ranged && MIXAMO.clips.sword_jump) return mir(a,'sword_jump');
+    if(MIXAMO.clips.jump) return 'jump';
+  }
   const spd=a.speed||0;
   if(gun){
     if(spd<0.5) return MIXAMO.clips.aim?'aim':'idle';
