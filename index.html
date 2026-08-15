@@ -1816,6 +1816,8 @@ const WEAPONS = {
   floorbuffer:{key:'floorbuffer',name:'Floor Buffer', cls:'medium', reach:1.4, light:3, heavy:6, wind:0.10, rec:0.12, stagger:0.7, gbreak:false, knock:true, dur:50, shake:0.6, heft:0.7, metal:false, spin:true, tint:0x7a7a86 },
   meatclub:{key:'meatclub',name:'Frozen Meat Club', cls:'heavy', reach:1.6, light:12, heavy:26, wind:0.36, rec:0.42, stagger:1.1, gbreak:false, knock:true, dur:Infinity, shake:0.95, heft:0.95, metal:false, frost:true, tint:0x8a5a3a }
 };
+// every wieldable weapon (all but bare hands) -- the pool the pass larder rolls from each round
+const WEAPON_POOL = Object.keys(WEAPONS).filter(k=>k!=='fists');
 /* build a weapon mesh, business-end pointing +Z out of the hand */
 function makeWeaponMesh(key){
   const g=new THREE.Group(); if(key==='fists') return g;
@@ -3820,7 +3822,7 @@ let _toScratch=null, _sepScratch=null;
 // DEV default: under the ?shot QA hook, start with mobs frozen so the scene can
 // be walked and inspected (see updateEnemy's window.FREEZE_MOBS gate). Inert in
 // normal play -- ?shot is never set there.
-if(typeof window!=='undefined' && window.FREEZE_MOBS===undefined) window.FREEZE_MOBS=true;   // DEV: mobs frozen during the rig work (revert for real play)
+if(typeof window!=='undefined' && window.FREEZE_MOBS===undefined) window.FREEZE_MOBS=false;   // real play: mobs live (set window.FREEZE_MOBS=true in the console to freeze for anim inspection)
 function updateEnemy(e, dt){
   // DEV/TEST: freeze living mobs in place -- they stand and idle-animate but
   // never chase, attack, grab, or shriek -- so the game can be walked around and
@@ -6120,7 +6122,7 @@ function startNight(cfg, onEnd){
   player._feet=null; player.vel.set(0,0,0);
   CAM.yaw=pfacing; CAM.lockK=0;
   // larder
-  for(const it of cfg.larder) spawnPickup(it.key,it.x,it.z,it.y);
+  for(const it of cfg.larder) spawnPickup(it.key||pick(WEAPON_POOL), it.x, it.z, it.y);   // random weapon per slot, re-rolled every round
   // tiki torches -- persistent deck fixtures you can grab and wield
   arena.userData.torchFlames=[];
   spawnTiki(-HALFW+2, 4.5); spawnTiki(-HALFW+2, -6.5);
@@ -8299,10 +8301,9 @@ function showDayEnd(res){
 // the pass, loaded with a weapon in every slot -- the chef starts on the
 // kitchen side (by the bar), wave 1 storms in from the front-wall entrance
 // (see spawnWaveChunk's forceSide), and both sides race for the counter.
-const PASS_LOADOUT=['spudgun','spudgun','spudgun','spudgun','spudgun','spudgun','spudgun'];
 const SLICE={
   player:{ wpn:'fists', pos:{x:0,z:-8}, facing:0 },
-  larder: PASS_LOADOUT.map((key,i)=>({ key, x:passSlotX(i), z:PASS.z, y:PASS_TOP_Y })),
+  larder: Array.from({length:PASS_SLOTS},(_,i)=>({ x:passSlotX(i), z:PASS.z, y:PASS_TOP_Y })),   // 7 pass slots; the weapon in each is rolled per round (startNight)
   waveSizes: [3,4,5,6,7],
   waves:[
     'weak','weak','weak',                                   // wave 1
