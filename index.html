@@ -63,6 +63,10 @@
   .pip.low{background:var(--flame);box-shadow:0 0 6px #ff2fb0aa}
   .pip.crit{background:var(--tomato);box-shadow:0 0 8px #ff2f6eaa}
   .pip.spent{background:#3a2a1a;box-shadow:none;opacity:.5}
+  /* ranged ammo: guns show a round COUNT, not 60+ pips */
+  #pips .ammo{font-family:"Anton",Impact,sans-serif;font-size:19px;line-height:1;color:var(--herb);
+    text-shadow:0 2px 0 #0009;letter-spacing:.03em}
+  #pips .ammo.low{color:var(--tomato);animation:hppanic .4s infinite}
 
   /* cooks-left counter */
   #cooks{position:absolute;right:22px;top:18px;text-align:right}
@@ -1807,7 +1811,7 @@ const WEAPONS = {
   potlid:   { key:'potlid',   name:'Pot Lid',      cls:'shield', reach:1.1,  light:4,  heavy:7,  wind:0.15, rec:0.20, stagger:0.30, gbreak:false, knock:false, dur:48, shake:0.20, heft:0.30, metal:true, shield:true, tint:0xb9c4cc },
   torch:    { key:'torch',    name:'Tiki Torch',   cls:'medium', reach:2.0,  light:10, heavy:19, wind:0.16, rec:0.22, stagger:0.75, gbreak:false, knock:true,  dur:34, shake:0.55, heft:0.55, metal:false, tint:0xff7a1e },
   plate:    { key:'plate',    name:'Frisbee Plate',cls:'light',  reach:1.4,  light:6,  heavy:10, wind:0.12, rec:0.18, stagger:0.50, gbreak:false, knock:true,  dur:Infinity, shake:0.30, heft:0.35, metal:true, frisbee:true, tint:0xefe9dc },
-  spudgun:  { key:'spudgun',  name:'Spud Gun',     cls:'light',  reach:1.2,  light:4,  heavy:7,  wind:0.05, rec:0.07, stagger:0.2, gbreak:false, knock:false, dur:Infinity, shake:0.06, heft:0.30, metal:false, ranged:true, tint:0x8a6d3b },   // rapid-fire dots
+  spudgun:  { key:'spudgun',  name:'Spud Gun',     cls:'light',  reach:1.2,  light:4,  heavy:7,  wind:0.05, rec:0.07, stagger:0.2, gbreak:false, knock:false, dur:60, shake:0.06, heft:0.30, metal:false, ranged:true, tint:0x8a6d3b },   // 60 spuds, then it breaks
   rollingpin:{key:'rollingpin',name:'Giant Rolling Pin', cls:'heavy', reach:1.9, light:14, heavy:28, wind:0.30, rec:0.40, stagger:1.4, gbreak:false, knock:true, dur:40, shake:0.9, heft:0.9, metal:false, flatten:true, tint:0xd9a15a },
   floorbuffer:{key:'floorbuffer',name:'Floor Buffer', cls:'medium', reach:1.4, light:3, heavy:6, wind:0.10, rec:0.12, stagger:0.7, gbreak:false, knock:true, dur:50, shake:0.6, heft:0.7, metal:false, spin:true, tint:0x7a7a86 },
   meatclub:{key:'meatclub',name:'Frozen Meat Club', cls:'heavy', reach:1.6, light:12, heavy:26, wind:0.36, rec:0.42, stagger:1.1, gbreak:false, knock:true, dur:Infinity, shake:0.95, heft:0.95, metal:false, frost:true, tint:0x8a5a3a }
@@ -3350,7 +3354,10 @@ function killChef(T, ang){
   popWord(p,pick(['DOWN','SENT HOME','COMPED','NO TIP FOR YOU','WALKED']),T.kind==='tough'?'#ff6a1e':'#f4e4c1',34);
   GAME.kills++;
   // drop their weapon as a pickup if it wasn't fists (worse-tier flavour: only spatula/pan survive)
-  if(T.wpn!=='fists' && Math.random()<0.6){ spawnPickup(T.wpn, T.pos.x, T.pos.z); }
+  if(T.wpn==='spudgun'){                                    // spud gun: top up YOUR ammo if you're holding one, else drop a loaded gun
+    if(player.wpn==='spudgun'){ player.dur=(player.dur||0)+60; updateHUDWeapon(); popWord({x:T.pos.x,y:1.4,z:T.pos.z},'+60 SPUDS','#ffe03d',26); }
+    else spawnPickup('spudgun', T.pos.x, T.pos.z);          // pickup arms 60 rounds (WEAPONS.spudgun.dur)
+  } else if(T.wpn!=='fists' && Math.random()<0.6){ spawnPickup(T.wpn, T.pos.x, T.pos.z); }
   const alive=enemies.filter(e=>!e.dead).length;
   updateHUDCooks(alive);
   maybeSpawnWave();
@@ -3605,7 +3612,9 @@ function updatePlayer(dt, pad, actor){
       if(tg && !tg.dead){ const d=Math.hypot(tg.pos.x-P.pos.x, tg.pos.z-P.pos.z); if(d>0.3) vy=(((tg.pos.y||0)+0.95)-my)*24/d; }
       else if(P._aimFall){ vy=(P._aimFall.y-my)*24/P._aimFall.d; }
       vy=clamp(vy,-14,14);
-      fireDot(P.pos.x,my,P.pos.z, P._aimAng!=null?P._aimAng:P.facing, 24, WEAPONS.spudgun.light, vy); P._gunKick=1; P._fireCD=0.1; if(AC)sfx.thud(0.2); shake(0.045); } }
+      fireDot(P.pos.x,my,P.pos.z, P._aimAng!=null?P._aimAng:P.facing, 24, WEAPONS.spudgun.light, vy); P._gunKick=1; P._fireCD=0.1; if(AC)sfx.thud(0.2); shake(0.045);
+      if(P.dur!==Infinity){ P.dur--; if(P.dur<=0) breakWeapon(P); else updateHUDWeapon(); }   // burn a spud; out of spuds -> the gun breaks
+    } }
     else P._fireCD=0;
   }
   // ----- attacks (Cross light / Square heavy / touch) -----
@@ -5963,6 +5972,11 @@ function updateHUDWeapon(){
   const pips=document.getElementById('pips'); pips.innerHTML='';
   const w=WEAPONS[player.wpn];
   if(w.dur===Infinity){ return; }
+  if(w.ranged){                                                  // guns show a live round COUNT (ammo stacks past the mag)
+    const left=Math.max(0,player.dur|0);
+    const s=document.createElement('span'); s.className='ammo'+(left<=10?' low':''); s.textContent='🥔 '+left;
+    pips.appendChild(s); return;
+  }
   const total=w.dur, left=Math.max(0,player.dur);
   for(let i=0;i<total;i++){ const d=document.createElement('i');
     d.className='pip'+(i>=left?' spent':(left<=3?' crit':left<=total*0.35?' low':''));
