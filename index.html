@@ -449,7 +449,7 @@
  <script src="vendor/three.min.js"></script>
  <script src="vendor/fflate.umd.js"></script>
  <script src="vendor/FBXLoader.js"></script>
- <script src="anims-data.js"></script>
+ <script src="anims-data.js" defer></script> <!-- file:// fallback data only (window.ANIM_FBX, unread on HTTP builds) -- defer its 2.7MB parse off the startup path -->
  <script src="vendor/GLTFLoader.js"></script>
  <script src="vendor/SkeletonUtils.js"></script>
  <script src="engine.js"></script>
@@ -4243,15 +4243,27 @@ const MIXAMO_TARGET_H = 1.9;   // world height the skeleton is scaled to (~ the 
     obj.updateWorldMatrix(true,true);
     MIXAMO.template = obj;           // whole armature; deep-cloned per character (keeps the Z-up->Y-up armature fix)
     MIXAMO.ready = true;             // skeleton is enough to build characters; clips stream in
-    for(const key in MIXAMO_SRC){
+    // STARTUP FREEZE FIX: firing all ~65 clip loads at once parsed them back-to-back on the
+    // main thread (FBXLoader.parse is synchronous) -- a ~10s hard block on desktop and far
+    // worse on phones: the game sat frozen on startup. Two staggered pumps now parse one
+    // clip each per ~16ms tick, core gameplay clips first; every consumer already
+    // null-checks MIXAMO.clips[key], so late arrivals just pop in when ready.
+    const CORE=['idle','walk','run','walk_b','dodge','hit','jump','aim','shoot','gun_run',
+                'atk_sword','c_jab','h_box','death','idle_fight','sword_idle','sword_walk'];
+    const queue=[...CORE.filter(k=>MIXAMO_SRC[k]), ...Object.keys(MIXAMO_SRC).filter(k=>!CORE.includes(k))];
+    let qi=0;
+    const pump=()=>{ if(qi>=queue.length) return; const key=queue[qi++];
       loader.load(MIXAMO_SRC[key], a=>{ const c=a.animations&&a.animations[0];
         if(c){ c.name=key;
           // strip horizontal root drift from the Hips position track (keep the vertical
           // bob) so in-place locomotion/attacks don't slide the character out of its root.
           for(const tr of c.tracks){ if(/Hips\.position$/.test(tr.name)){ const v=tr.values;
             for(let i=0;i+2<v.length;i+=3){ v[i]=0; v[i+2]=0; } } }
-          MIXAMO.clips[key]=c; } }, null, ()=>console.warn('clip load fail:', key));
-    }
+          MIXAMO.clips[key]=c; }
+        setTimeout(pump,16);                                    // yield a frame between parses
+      }, null, ()=>{ console.warn('clip load fail:', key); setTimeout(pump,16); });
+    };
+    pump(); pump();   // two lanes: downloads overlap while parses stay spaced out
   }, null, e=>console.warn('X_Bot load fail', e));
 })();
 
@@ -4309,11 +4321,18 @@ function clipFor(a, name){ const t=a.chef&&a.chef.userData&&a.chef.userData.rigT
 (function preloadRig(){
   if(typeof THREE==='undefined' || !THREE.FBXLoader || !THREE.GLTFLoader || !THREE.SkeletonUtils){ console.warn('RIG: loaders missing, using bone-cosmetic fallback'); return; }
   const done=()=>{ if(RIG.source && RIG.models.chef && RIG.models.customer){ RIG.ready=true; console.log('RIG ready (GLB skinned meshes)'); } };
-  new THREE.FBXLoader().load('anims/X_Bot.fbx', o=>{ RIG.source=o; o.updateMatrixWorld(true);
-    o.traverse(x=>{ if(x.isBone){ RIG.srcBones[x.name]=x; RIG.srcRest[x.name]=x.getWorldQuaternion(new THREE.Quaternion()); } });
-    done(); }, null, e=>console.warn('RIG source fail', e));
-  const gl=new THREE.GLTFLoader();
-  for(const type in RIG_SRC){ (t=>{ gl.load(RIG_SRC[t], g=>{ RIG.models[t]=_rigPrep(g.scene); done(); }, null, e=>console.warn('RIG glb fail',t,e)); })(type); }
+  // STARTUP FREEZE FIX: don't pile these parses onto the boot burst -- start after the core
+  // clip pump has a head start and load the three rig files one after another. makeChefGLB
+  // falls back to the bone-cosmetic chef until RIG.ready flips, so late is fine.
+  setTimeout(()=>{
+    const types=Object.keys(RIG_SRC), gl=new THREE.GLTFLoader(); let ti=0;
+    const loadModels=()=>{ if(ti>=types.length) return; const t=types[ti++];
+      gl.load(RIG_SRC[t], g=>{ RIG.models[t]=_rigPrep(g.scene); done(); setTimeout(loadModels,16); },
+        null, e=>{ console.warn('RIG glb fail',t,e); setTimeout(loadModels,16); }); };
+    new THREE.FBXLoader().load('anims/X_Bot.fbx', o=>{ RIG.source=o; o.updateMatrixWorld(true);
+      o.traverse(x=>{ if(x.isBone){ RIG.srcBones[x.name]=x; RIG.srcRest[x.name]=x.getWorldQuaternion(new THREE.Quaternion()); } });
+      done(); loadModels(); }, null, e=>{ console.warn('RIG source fail', e); loadModels(); });
+  }, 900);
 })();
 
 // build a character from a rigged GLB clone (skinned mesh + copy-mode baked clips)
