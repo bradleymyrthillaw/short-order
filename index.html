@@ -4608,10 +4608,8 @@ function actionName(a){
   // JUMP ATTACK = overhead slam (aerial heavy): winds up through the fall, strikes on landing.
   // Separate from a.attack (the slam nulls it) and from a plain hop.
   if(((a.slam && a.slam.peak!=null) || (a.slamHit||0)>0) && MIXAMO.clips.atk_slam) return mir(a,'atk_slam');   // .peak marks the player's aerial slam (enemy ground-pounds don't carry it)
-  // AIRBORNE (no attack): plain jump; a held melee weapon carries the great-sword jump.
+  // AIRBORNE (no attack): plain jump for everyone (the great-sword jump floated, reverted).
   if(airborne){
-    const jw=WEAPONS[a.wpn]||{};
-    if(a.wpn && a.wpn!=='fists' && !jw.ranged && MIXAMO.clips.sword_jump) return mir(a,'sword_jump');
     if(MIXAMO.clips.jump) return 'jump';
   }
   const spd=a.speed||0;
@@ -4623,16 +4621,9 @@ function actionName(a){
     if(s==='_b'&&MIXAMO.clips.gun_back) return 'gun_back';
     return MIXAMO.clips.gun_run?'gun_run':'run';
   }
-  // MELEE weapon-carry stance: hold any real weapon (not bare fists) like a great sword.
-  const mw=WEAPONS[a.wpn]||{};
-  if(a.wpn && a.wpn!=='fists' && !mw.ranged && MIXAMO.clips.sword_idle){
-    if(spd<0.5) return mir(a,'sword_idle');
-    const s=moveDirSuffix(a);
-    if(s==='_l'&&MIXAMO.clips.sword_strafe_l) return 'sword_strafe_l';
-    if(s==='_r'&&MIXAMO.clips.sword_strafe_r) return 'sword_strafe_r';
-    if(s==='_b') return MIXAMO.clips.walk_b?'walk_b':(MIXAMO.clips.sword_walk?'sword_walk':'walk');   // no great-sword backpedal clip; reuse the plain one
-    return MIXAMO.clips.sword_walk?'sword_walk':'run';   // forward march at any speed, blade ready
-  }
+  // (Great-sword melee carry stance REVERTED -- the mo_great_sword_* clips floated off the ground,
+  //  walked backward, and broke the one-handed weapon grip. Held weapons use the generic locomotion
+  //  below, which grips, faces forward, and stays grounded.)
   if(spd>2.3){ const k='run'+moveDirSuffix(a); return MIXAMO.clips[k]?k:'run'; }
   if(spd>0.6){ const k='walk'+moveDirSuffix(a); return MIXAMO.clips[k]?k:'walk'; }
   if(!a._idleClip){ a._idleClip=IDLE_VARIANTS[(Math.random()*IDLE_VARIANTS.length)|0]; if(!MIXAMO.clips[a._idleClip]) a._idleClip='idle'; }   // stable per-actor idle variant
@@ -6046,7 +6037,7 @@ function spawnWaveChunk(delay){
   const side=WAVE.wave===0?1:null;   // wave 1 only: everyone enters from the front wall
   for(let i=0;i<first;i++){ setTimeout(()=>{ WAVE.pending=Math.max(0,(WAVE.pending||1)-1);
     const _roll=Math.random();
-    const _kind = _roll<0.10?'scrapper' : _roll<0.18?'banshee' : _roll<0.26?'dasher' : (WAVE.queue[WAVE.spawned]||'weak');
+    const _kind = _roll<0.10?'scrapper' : _roll<0.18?'dasher' : (WAVE.queue[WAVE.spawned]||'weak');   // banshee (screecher) removed
     spawnEnemy(_kind, side); WAVE.spawned++;
     if(WAVE.spawned>=WAVE.total) WAVE.waveDone=true;
     updateHUDCooks(enemies.filter(e=>!e.dead).length); }, delay+i*350); }
@@ -6074,7 +6065,7 @@ function maybeSpawnWave(){
       for(let i=0;i<n;i++){ WAVE.pending=(WAVE.pending||0)+1;
         setTimeout(()=>{ WAVE.pending=Math.max(0,(WAVE.pending||1)-1);
           const _roll=Math.random();
-    const _kind = _roll<0.10?'scrapper' : _roll<0.18?'banshee' : _roll<0.26?'dasher' : (WAVE.queue[WAVE.spawned]||'weak');
+    const _kind = _roll<0.10?'scrapper' : _roll<0.18?'dasher' : (WAVE.queue[WAVE.spawned]||'weak');   // banshee (screecher) removed
     spawnEnemy(_kind, side); WAVE.spawned++;
           updateHUDCooks(enemies.filter(e=>!e.dead).length);
           if(WAVE.spawned>=WAVE.total) WAVE.waveDone=true; }, i*450); }
