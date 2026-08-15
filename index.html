@@ -4691,7 +4691,8 @@ function poseChef(a, isPlayer, dt){
   const c=a.chef, u=c.userData;
   c.position.copy(a.pos); c.rotation.y=a.facing;
   if(!u || !u.mixRoot) return;                          // placeholder (skeleton not ready)
-  if(a.dead){ if(a._mixer) a._mixer.update(dt); updateLocs(a, dt); return; }   // death visuals wired in stage 2
+  if(a.dead){ if(a.rag){ ragTick(a, dt); ragApplySkel(a); } else if(a._mixer) a._mixer.update(dt);   // physics ragdoll (or death clip if the rig couldn't build one)
+    updateLocs(a, dt); return; }   // dreads keep falling/swaying over the ragdoll
   driveClips(a, dt);
   // thin cosmetic layer: red hurt-flash, else neon emissive (synthwave enemies)
   const m=u.mats, hurt=a.hurt||0, n=u.neon||{};
@@ -5348,7 +5349,7 @@ const _rp1=new V3(), _rp2=new V3(), _rgv=new V3();
 function ragPt(p,r){ return { p:p.clone(), o:p.clone(), r:r }; }
 function finiteV(v){ return Number.isFinite(v.x)&&Number.isFinite(v.y)&&Number.isFinite(v.z); }
 function buildRagdoll(a){
-  if(a.chef&&a.chef.userData&&a.chef.userData.skel){ a.rag=null; return; }   // new skeleton: physics ragdoll wired in stage 3
+  if(a.chef&&a.chef.userData&&a.chef.userData.skel){ buildRagdollSkel(a); return; }   // new skeleton -> skinned-bone Verlet ragdoll
   const u=a.chef.userData, s=a.chef.scale.x||1;
   a.chef.updateMatrixWorld(true);
   const shW =i=> u.upper.localToWorld(u.arms[i].sh.clone());
@@ -5422,9 +5423,82 @@ function ragApply(a){
   orientFixed(u.legs[1].thigh, LhipR, LkneR, THIGH); orientFixed(u.legs[1].shin, LkneR, LfooR, SHIN); u.legs[1].boot.position.copy(LfooR);
   springDeform(u.dHead, 0.016); applyDeform(u.head, u.dHead, a.chef.scale.x||1);
 }
+/* ---- SKINNED-BONE RAGDOLL (new Mixamo rig) ------------------------------
+   Same Verlet particle sim as the old model (ragStep/ragTick/ragImpulse are
+   structure-agnostic) -- what differs is the two ends: SEEDING the particles
+   from the live Mixamo bone world positions, and WRITING them back onto the
+   skinned skeleton. The write-back reuses the loc-chain idiom (see updateLocs):
+   root->tip, each bone rotates its REST child-axis to point at its target
+   particle. That fromTo-from-rest math is independent of the reference pose,
+   so we can snapshot the rest frame at the instant of death and still orient
+   correctly -- no bind-pose bookkeeping needed. */
+function buildRagdollSkel(a){
+  const u=a.chef&&a.chef.userData, sk=u&&u.skel; if(!sk){ a.rag=null; return; }
+  const s=(u.meshScale||a.chef.scale.x||1);
+  a.chef.updateMatrixWorld(true);
+  const B=n=>sk[n];
+  const NEED=['mixamorigHips','mixamorigSpine','mixamorigSpine1','mixamorigSpine2','mixamorigNeck','mixamorigHead',
+    'mixamorigLeftShoulder','mixamorigLeftArm','mixamorigLeftForeArm','mixamorigLeftHand',
+    'mixamorigRightShoulder','mixamorigRightArm','mixamorigRightForeArm','mixamorigRightHand',
+    'mixamorigLeftUpLeg','mixamorigLeftLeg','mixamorigLeftFoot',
+    'mixamorigRightUpLeg','mixamorigRightLeg','mixamorigRightFoot'];
+  for(const n of NEED){ if(!B(n)){ a.rag=null; return; } }   // non-standard rig -> fall back to the death clip
+  const wp=b=>b.getWorldPosition(new V3());
+  const P={
+    head: ragPt(wp(B('mixamorigHead')),0.235*s), chest:ragPt(wp(B('mixamorigSpine2')),0.30*s), hipC:ragPt(wp(B('mixamorigHips')),0.26*s),
+    shL:ragPt(wp(B('mixamorigLeftArm')),0.15*s),  shR:ragPt(wp(B('mixamorigRightArm')),0.15*s),
+    hipL:ragPt(wp(B('mixamorigLeftUpLeg')),0.14*s), hipR:ragPt(wp(B('mixamorigRightUpLeg')),0.14*s),
+    elbL:ragPt(wp(B('mixamorigLeftForeArm')),0.09*s), elbR:ragPt(wp(B('mixamorigRightForeArm')),0.09*s),
+    hanL:ragPt(wp(B('mixamorigLeftHand')),0.11*s),  hanR:ragPt(wp(B('mixamorigRightHand')),0.11*s),
+    kneL:ragPt(wp(B('mixamorigLeftLeg')),0.11*s),   kneR:ragPt(wp(B('mixamorigRightLeg')),0.11*s),
+    fooL:ragPt(wp(B('mixamorigLeftFoot')),0.06*s),  fooR:ragPt(wp(B('mixamorigRightFoot')),0.06*s)
+  };
+  const list=Object.keys(P).map(k=>P[k]);
+  for(const q of list){ if(!finiteV(q.p)){ a.rag=null; return; } }   // bad transform -> bail to the death clip
+  const C=[]; const link=(x,y,k)=>C.push({a:P[x],b:P[y],len:Math.max(P[x].p.distanceTo(P[y].p),0.01),k:k===undefined?1:k});
+  link('head','chest',0.9); link('head','shL',0.55); link('head','shR',0.55);
+  link('chest','shL'); link('chest','shR'); link('shL','shR',0.9);
+  link('chest','hipC',0.95); link('hipC','hipL'); link('hipC','hipR'); link('hipL','hipR',0.9);
+  link('shL','hipL',0.7); link('shR','hipR',0.7); link('shL','hipR',0.5); link('shR','hipL',0.5);
+  link('shL','elbL'); link('elbL','hanL'); link('shR','elbR'); link('elbR','hanR');
+  link('hipL','kneL'); link('kneL','fooL'); link('hipR','kneR'); link('kneR','fooR');
+  link('chest','elbL',0.12); link('chest','elbR',0.12);
+  // driven bones (root->tip): each rotates its rest child-axis toward `key`'s particle.
+  // axis = the child bone's rest local offset (constant; bones rotate, never translate).
+  const mk=(bn,cn,key)=>{ const b=B(bn),c=B(cn); return { bone:b, q:b.quaternion.clone(), axis:c.position.clone().normalize(), key }; };
+  a.rag={ pts:P, list, cons:C, acc:0, skel:true, hips:B('mixamorigHips'), drive:[
+    mk('mixamorigHips','mixamorigSpine','chest'), mk('mixamorigSpine','mixamorigSpine1','chest'),
+    mk('mixamorigSpine1','mixamorigSpine2','chest'), mk('mixamorigSpine2','mixamorigNeck','head'),
+    mk('mixamorigNeck','mixamorigHead','head'),
+    mk('mixamorigLeftShoulder','mixamorigLeftArm','shL'), mk('mixamorigLeftArm','mixamorigLeftForeArm','elbL'), mk('mixamorigLeftForeArm','mixamorigLeftHand','hanL'),
+    mk('mixamorigRightShoulder','mixamorigRightArm','shR'), mk('mixamorigRightArm','mixamorigRightForeArm','elbR'), mk('mixamorigRightForeArm','mixamorigRightHand','hanR'),
+    mk('mixamorigLeftUpLeg','mixamorigLeftLeg','kneL'), mk('mixamorigLeftLeg','mixamorigLeftFoot','fooL'),
+    mk('mixamorigRightUpLeg','mixamorigRightLeg','kneR'), mk('mixamorigRightLeg','mixamorigRightFoot','fooR')
+  ]};
+  if(a._mixer) a._mixer.stopAllAction();          // release the clip -- we own the bones now
+  if(u.cos) for(const m of u.cos) m.visible=false;
+}
+const _raMi=new THREE.Matrix4(), _raQ=new THREE.Quaternion(), _raD=new V3();
+function ragApplySkel(a){
+  const R=a.rag; if(!R||!R.drive) return; const P=R.pts;
+  a.chef.updateMatrixWorld(true);                 // refresh holder/clone so hips.parent world is fresh
+  // translate the skeleton so the hips bone rides the hipC particle (bones can't slide, so the root carries it)
+  const hips=R.hips, hp=hips.parent;
+  _raMi.copy(hp.matrixWorld).invert(); hips.position.copy(P.hipC.p).applyMatrix4(_raMi);
+  for(const d of R.drive){
+    const b=d.bone, T=P[d.key].p;
+    b.quaternion.copy(d.q); b.updateMatrix(); b.updateWorldMatrix(false,false);   // bone's REST world frame under the live parent
+    _raMi.copy(b.matrixWorld).invert(); _raD.copy(T).applyMatrix4(_raMi);          // target, expressed in that frame = child-dir * len
+    if(_raD.lengthSq()>1e-10){ _raD.normalize(); _raQ.setFromUnitVectors(d.axis,_raD);
+      b.quaternion.copy(d.q).multiply(_raQ); b.updateMatrix(); b.updateWorldMatrix(false,false); }
+  }
+}
 /* dispatcher: real ragdoll when we have one, else the spring-topple */
 function updateDead(a, dt){
-  if(a.chef&&a.chef.userData&&a.chef.userData.skel){ if(a._mixer) a._mixer.update(dt); return; }   // new skeleton: death clip/ragdoll in stage 2/3
+  if(a.chef&&a.chef.userData&&a.chef.userData.skel){
+    if(a.rag){ ragTick(a, dt); ragApplySkel(a); } else if(a._mixer) a._mixer.update(dt);   // ragdoll, or the death clip if the rig couldn't build one
+    return;
+  }
   if(a.rag){ ragTick(a, dt); ragApply(a); }
   else deathPose(a, dt);
 }
