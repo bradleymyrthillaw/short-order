@@ -449,7 +449,6 @@
  <script src="vendor/three.min.js"></script>
  <script src="vendor/fflate.umd.js"></script>
  <script src="vendor/FBXLoader.js"></script>
- <script src="anims-data.js" defer></script> <!-- file:// fallback data only (window.ANIM_FBX, unread on HTTP builds) -- defer its 2.7MB parse off the startup path -->
  <script src="vendor/GLTFLoader.js"></script>
  <script src="vendor/SkeletonUtils.js"></script>
  <script src="engine.js"></script>
@@ -4243,11 +4242,13 @@ const MIXAMO_TARGET_H = 1.9;   // world height the skeleton is scaled to (~ the 
     obj.updateWorldMatrix(true,true);
     MIXAMO.template = obj;           // whole armature; deep-cloned per character (keeps the Z-up->Y-up armature fix)
     MIXAMO.ready = true;             // skeleton is enough to build characters; clips stream in
-    // STARTUP FREEZE FIX: firing all ~65 clip loads at once parsed them back-to-back on the
-    // main thread (FBXLoader.parse is synchronous) -- a ~10s hard block on desktop and far
-    // worse on phones: the game sat frozen on startup. Two staggered pumps now parse one
-    // clip each per ~16ms tick, core gameplay clips first; every consumer already
-    // null-checks MIXAMO.clips[key], so late arrivals just pop in when ready.
+  }, null, e=>console.warn('X_Bot load fail', e));
+  // BAKED CLIP PACK: one ~3MB request -- anims/clips.bin is the whole library as zlib'd
+  // AnimationClip JSON, baked offline from 37MB of FBX by tools/bake-clips.js (FBX is a DCC
+  // interchange format; this is the delivery format). No FBXLoader in the clip path at all:
+  // inflate, JSON.parse, then AnimationClip.parse a handful per tick. Consumers already
+  // null-check MIXAMO.clips[key], so clips pop in as they build. Rebake after clip changes.
+  const streamClips=()=>{            // FALLBACK: per-file FBX streaming (trees without the pack)
     const CORE=['idle','walk','run','walk_b','dodge','hit','jump','aim','shoot','gun_run',
                 'atk_sword','c_jab','h_box','death','idle_fight','sword_idle','sword_walk'];
     const queue=[...CORE.filter(k=>MIXAMO_SRC[k]), ...Object.keys(MIXAMO_SRC).filter(k=>!CORE.includes(k))];
@@ -4264,7 +4265,17 @@ const MIXAMO_TARGET_H = 1.9;   // world height the skeleton is scaled to (~ the 
       }, null, ()=>{ console.warn('clip load fail:', key); setTimeout(pump,16); });
     };
     pump(); pump();   // two lanes: downloads overlap while parses stay spaced out
-  }, null, e=>console.warn('X_Bot load fail', e));
+  };
+  fetch('anims/clips.bin').then(r=>{ if(!r.ok) throw new Error('HTTP '+r.status); return r.arrayBuffer(); })
+    .then(ab=>{
+      const pack=JSON.parse(fflate.strFromU8(fflate.unzlibSync(new Uint8Array(ab))));
+      const keys=Object.keys(pack.clips||{}); let i=0;
+      (function chew(){ const end=Math.min(i+6, keys.length);   // a handful per tick keeps frames alive
+        for(; i<end; i++){ const k=keys[i];
+          try{ MIXAMO.clips[k]=THREE.AnimationClip.parse(pack.clips[k]); }catch(e){ console.warn('baked clip fail:', k, e); } }
+        if(i<keys.length) setTimeout(chew, 16); })();
+    })
+    .catch(e=>{ console.warn('clip pack unavailable ('+(e&&e.message)+') -- streaming FBX per file'); streamClips(); });
 })();
 
 /* ============ GLB RIG: custom skinned meshes (Blender) + copy-mode retargeted Mixamo clips ============
