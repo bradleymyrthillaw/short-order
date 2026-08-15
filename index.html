@@ -4581,7 +4581,12 @@ function actionName(a){
     if(gun||w.ranged) return 'shoot';
     // UNARMED ONLY: bare hands throw the punch combos (light + heavy pools)
     if(wk==='fists'||!wk){ const pool=(a.attack.heavy||w.cls==='heavy'||w.cls==='medium')?HEAVY_COMBOS:LIGHT_COMBOS; return mir(a, pool[ci%pool.length]); }
-    // ARMED MELEE: every held weapon swings the two-hand blade combo
+    // WEAPON-SPECIFIC SWINGS (whoever's holding it)
+    if(wk==='rollingpin') return 'atk_bat';                    // rolling pin = the baseball swing
+    if(wk==='potlid')     return mir(a,'atk_shield');          // pot lid = sword-and-shield
+    // the PLAYER keeps the two-hand combo; ENEMIES get the plain light/heavy sword swings
+    const isP=a.chef&&a.chef.userData&&a.chef.userData.isPlayer;
+    if(!isP) return a.attack.heavy ? 'atk_heavy' : 'atk_light';
     return mir(a,'atk_sword');
   }
   if(a._tossing) return MIXAMO.clips.throw?'throw':null;

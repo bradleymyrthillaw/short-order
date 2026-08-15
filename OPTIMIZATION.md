@@ -26,7 +26,7 @@ show up. Don't spend game-dev time on it prematurely.**
 2. **Small renderer tweaks** (with corrected expectations, see caveats):
    `antialias:false` (composer bypasses it), DPR ceiling 1.5 (battery/thermal
    trade, governor already covers FPS).
-3. **Trim dead animation clips** — 10 of 65 in `clips.bin` are never played
+3. **Trim dead animation clips** — 5 of 65 in `clips.bin` are never played
    (see below). Drop from `MIXAMO_SRC` + rebake, or wire some back on purpose.
 4. **Later, only with players on slow networks:** service worker (Workbox,
    cache-first on *immutable* assets), meshopt the GLBs (all geometry, ~no
@@ -67,21 +67,22 @@ show up. Don't spend game-dev time on it prematurely.**
 - Three.js r128 (2021): no `BatchedMesh`, no async shader compile, no multisample
   targets — batching/WebGPU would be an engine-upgrade project.
 
-## Unwired animation clips (10/65 — loaded but never played)
+## Unwired animation clips (5/65 — loaded but never played)
 
 State machine (`actionName`) never selects these; they still bake into `clips.bin`:
 
 | Clip | Source FBX | Why dead |
 |------|-----------|----------|
-| `atk_light`  | `atk_light` | orphaned when armed melee → `atk_sword` |
-| `atk_heavy`  | `atk_heavy` | never wired |
-| `atk_bat`    | `mo_baseball_strike` | orphaned when armed melee → `atk_sword` (was blunt weapons) |
-| `atk_shield` / `atk_shield_L` | `mo_sword_and_shield_attack` (+`-2`) | never wired (pot lid uses generic swing) |
-| `gun_reload` | `mo_reloading` | no reload mechanic |
+| `gun_reload` | `mo_reloading` | no reload mechanic (spud gun is rapid-fire) |
 | `throw_obj`  | `mo_throw_object` | throw system only plays `throw` |
 | `toss`       | `toss` | throw system only plays `throw` |
 | `toss_gren`  | `mo_toss_grenade` | throw system only plays `throw` |
 | `death_walk` | `mo_walking_to_dying` | death only plays `death` |
+
+Now wired (previously orphaned): `atk_light` / `atk_heavy` → enemy light/heavy
+swings; `atk_bat` → rolling pin; `atk_shield` → pot lid. The player keeps the
+`atk_sword` two-hand combo. Weapon-specific overrides (bat/shield) apply to
+whoever holds the weapon; player-vs-enemy is read from `chef.userData.isPlayer`.
 
 Also note: `CLIP_FILES` (top of the rig block) is dead code — defined, never read.
 
