@@ -3122,11 +3122,12 @@ function nearestEnemy(fromPos, facingYaw, cone){
 }
 
 /* ================================================================ COMBAT */
+const ATK_DUR_MUL=2;   // 2x slower, weightier swings -- applied to every attack (the anim scrubs to A.dur)
 function startAttack(atk){ // atk shared by player/enemy: {heavy}
   const A=atk.actor, w=WEAPONS[atk.wpn];
   if(A.attack||A.stagger>0||A.dead||(A.dodge)) return false;
   if(atk.heavy && w.dur!==Infinity && A.dur<2 && A.wpn!=='fists'){ /* not enough for heavy; allow but will break */ }
-  const wind=w.wind*(atk.heavy?1.5:1), active=0.09, rec=w.rec*(atk.heavy?1.3:1);
+  const M=ATK_DUR_MUL, wind=w.wind*(atk.heavy?1.5:1)*M, active=0.09*M, rec=w.rec*(atk.heavy?1.3:1)*M;
   A.attack={ wpn:atk.wpn, heavy:atk.heavy, t:0, wind, active, rec, dur:wind+active+rec,
     hitAt:wind, hit:false, side:(A.comboStep%2===0)?1:-1,
     shape:(A.wpn==='fists'
@@ -3279,7 +3280,7 @@ function resolveHit(A, isPlayer){
     ring(cpos, w.metal?COL.cream:COL.flame, (1.0 + weight*1.7)*bw);
     if(weight>0.55 && !blocked){ ring(cpos, 0xffffff, 1.5+weight); burst(cpos, 8, 0xffffff, 1.6+weight); }
     shake((0.28 + weight*2.0) * bw);   // chunkier -- hits have to LAND
-    hitstop((0.03 + weight*0.17) * (blocked?0.5:1));
+    hitstop((0.06 + weight*0.28) * (blocked?0.5:1));   // more stop frames -- hits land heavier
     const power=Math.min(1, weight*1.15) * bw;
     impactFrames(weight>0.75?4:(weight>0.45?3:(weight>0.2?2:1)), blocked?0x7fb2d6:(power>0.6?0xFFE03D:0xFFF6E3), 0x140c07);
     hitPost(power, blocked?0x7fb2d6:(w.metal?0xffe6a0:0xff6a1e));
@@ -4051,8 +4052,8 @@ function startGrab(e){
 function beginEnemyAttack(e,aim){
   if(e.attack)return;
   const heavy=(Math.random()<0.25 && e.kind==='tough') || !!e.slam;   // dashers always slam
-  const w=WEAPONS[e.wpn]; const wind=w.wind*e.wind*(heavy?1.4:1)+0.14;
-  e.attack={ wpn:e.wpn, heavy, t:0, wind, active:0.09, rec:w.rec, dur:wind+0.09+w.rec, hitAt:wind, hit:false,
+  const w=WEAPONS[e.wpn], M=ATK_DUR_MUL; const wind=(w.wind*e.wind*(heavy?1.4:1)+0.14)*M, active=0.09*M, rec=w.rec*M;
+  e.attack={ wpn:e.wpn, heavy, t:0, wind, active, rec, dur:wind+active+rec, hitAt:wind, hit:false,
     side:(Math.random()<0.5?1:-1),
     shape:(e.wpn==='fists' ? PUNCHES[(Math.random()*PUNCHES.length)|0] : (heavy?FINISH:SWINGS[(Math.random()*SWINGS.length)|0])), aim };
   e.state='attacking';
