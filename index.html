@@ -6657,6 +6657,7 @@ const STATION_DEFS={
 const DEFAULT_LAYOUT=[
   {def:'lettucecrate',c:0,r:0},{def:'tomatocrate',c:1,r:0},{def:'prep',c:2,r:0},
   {def:'counter',c:3,r:0},{def:'plate',c:4,r:0},   // chez parity: no wash-up chore -- the assembly counter ends the line
+  {def:'whiskeycrate',c:5,r:0},{def:'sourmixcrate',c:6,r:0},   // THE BAR, standard-issue: Whiskey Sour out of the gate (Gin = shop upgrade)
 ];
 let STATIONS=[];   // live station instances (carry mesh refs + cook state at runtime)
 let OCC={};        // occupancy map: 'c|r' -> instance id (for placement collision)
@@ -6668,12 +6669,28 @@ function makeStation(def,c,r,wear,broken,rot){ const D=STATION_DEFS[def]; if(!D)
 // STATIONS IN PLACE (never reassigns the array) so mesh refs attached by buildKitchen
 // and per-object cook state survive a re-layout. Called once at init and again only
 // when the player rearranges the kitchen in prep -- NOT every day.
+// whiskey sour is standard-issue now -> guarantee its crates exist even in older saved layouts
+function firstFreeCell(){
+  for(let r=0;r<GRID.rows;r++) for(let c=0;c<GRID.cols;c++){
+    if(OCC[cellKey(c,r)]) continue; if(cellBlockedByFurniture(c,r)) continue; return {c,r};
+  }
+  return null;
+}
+function ensureDefaultBar(){
+  for(const pair of [['whiskeycrate','whiskey'],['sourmixcrate','sourmix']]){
+    if(haveCrate(pair[1])) continue;                       // already placed (default or owned) -> leave it
+    const cell=firstFreeCell(); if(!cell) break;           // no room -> skip (happy hour just won't fire)
+    const s=makeStation(pair[0],cell.c,cell.r); if(!s) continue;
+    STATIONS.push(s); OCC[cellKey(cell.c,cell.r)]=s.id;    // data only; the first buildKitchen builds its mesh
+  }
+}
 function applyLayout(layout){
   STATIONS.length=0; OCC={}; _sidCounter=0;
   for(const p of layout){
     const s=makeStation(normDef(p), p.c, p.r, p.wear, p.broken, p.rot); if(!s) continue;
     STATIONS.push(s); OCC[cellKey(p.c,p.r)]=s.id;
   }
+  ensureDefaultBar();
   return STATIONS;
 }
 applyLayout(DEFAULT_LAYOUT);   // populate immediately; RUN.layout re-applies after loadRun()
@@ -6748,9 +6765,7 @@ const STORE=[
   { kind:'station', def:'fryer',        name:'Fryer',           desc:'Fry station (for fried dishes to come)',     price:360, icon:'🍟' },
   { kind:'station', def:'chickencrate', name:'Chicken Crate',   desc:'Chicken — fry it (unlocks Karaage)',         price:160, icon:'🍗' },
   { kind:'station', def:'icebox',       name:'Ice Box',         desc:'Raw lobster — boil it (unlocks Lobster)',    price:260, icon:'🦞' },
-  { kind:'station', def:'whiskeycrate', name:'Whiskey Shelf',   desc:'Whiskey — pour with sour mix (Whiskey Sour)',price:180, icon:'🥃' },
-  { kind:'station', def:'gincrate',     name:'Gin Shelf',       desc:'Gin — pour with sour mix (Gin Sour)',        price:180, icon:'🍸' },
-  { kind:'station', def:'sourmixcrate', name:'Sour Mix',        desc:'The mixer both sours share',                 price:120, icon:'🍋' },
+  { kind:'station', def:'gincrate',     name:'Gin Shelf',       desc:'Gin — pours a Gin Sour (whiskey bar is standard)',price:180, icon:'🍸' },
   { kind:'table',                        name:'Dining Table',    desc:'More seats — place it, then set its chairs', price:300, icon:'🪑' },
 ];
 function ownedCount(){ return (RUN.owned||[]).length; }
@@ -7086,8 +7101,9 @@ function spawnDiner(){
   DAY.slotTaken[slot]=true;
   const seat=SEATS[slot];
   const ci=(Math.random()*CAST.length)|0, cast=CAST[ci];
-  const bad=Math.random()<0.18;                            // ~30% ask for the off-menu thing (the 2D ratio)
-  const dish=bad?null:pick(availableRecipes());
+  const hhPool=HH.active?sourPool():null;                  // HAPPY HOUR: everyone piles in for a sour
+  const bad=(hhPool&&hhPool.length)?false:(Math.random()<0.18);   // ~18% ask for the off-menu thing
+  const dish=(hhPool&&hhPool.length)?pick(hhPool):(bad?null:pick(availableRecipes()));
   const g=makeDiner(cast); g.rotation.y=Math.PI;           // face the pass/kitchen (-z)
   g.position.set(seat.x, 0, ENTRANCE_Z); scene.add(g);     // walk in from the front door
   const bubble=makeBubble('…','read'); scene.add(bubble);  // read the menu first; the order is hidden until you greet them
@@ -7135,7 +7151,7 @@ function updateDiners(dt){
     }
   }
 }
-/* ===================== THE SHARK (weekly event; replaces the faultline) =====================
+/* ===================== THE SHARK (weekly mid-shift event) =====================
    Roughly once a week a shark flops in over the bay rail, hops around the dining
    floor stealing food off tables and off the pass, and terrifies the customers
    (fast patience drain within range; a chomp sends a diner bolting for the door).
@@ -7159,6 +7175,22 @@ function makeShark(){
   g.scale.setScalar(1.9); g.userData={flop,tail}; return g;   // big, dramatic
 }
 const SHARK={ active:false, g:null, x:0, z:0, face:Math.PI, vx:0, vz:0, state:'in', t:0, ate:0, cd:0, hp:4, _pcd:0, thrashT:0, wanderT:0, _tx:0, _tz:0, _lunge:3.4 };
+/* ===================== HAPPY HOUR (mid-shift sour rush) =====================
+   Around the middle of every shift the room fills with patrons ordering SOURS -- Whiskey Sour by
+   default, Gin Sour too once you've bought the gin shelf. Spawns spike and each sour pays a bonus.
+   Just serve a lot of them before the window closes. Reuses the normal make/serve loop end to end. */
+const HH={ active:false, t:0, served:0, cash:0 };
+const HH_LEN=26, HH_BONUS=1.5;                 // window seconds; sour-serve pay multiplier during the rush
+function sourPool(){ const p=[]; if(canMake('wsour'))p.push('wsour'); if(canMake('gsour'))p.push('gsour'); return p; }
+function startHappyHour(){
+  if(!sourPool().length) return;               // no bar -> no rush (shouldn't happen; whiskey sour is standard)
+  HH.active=true; HH.t=HH_LEN; HH.served=0; HH.cash=0;
+  toast('🍸 HAPPY HOUR — SOUR RUSH ON!'); shake(0.4); if(AC){ sfx.pickup(); drum('crash',0.7); }
+}
+function endHappyHour(){
+  HH.active=false;
+  toast('🍸 LAST CALL — '+HH.served+' sour'+(HH.served===1?'':'s')+' poured (+$'+HH.cash+')'); if(AC) drum('ride',0.7);
+}
 function startShark(){
   const g=makeShark(); scene.add(g);
   Object.assign(SHARK,{ g, active:true, state:'in', t:0, ate:0, cd:0, hp:3, _pcd:0, vx:0, vz:0,
@@ -7416,7 +7448,8 @@ function serveDiner(P,d){
   const mult=1+0.35*(DAY.combo-1);                                    // uncapped -- the shot-clock is the limiter
   const speedMult=1+0.5*Math.max(0, 1-(d.orderAge||99)/18);
   const fast=speedMult>=1.15;
-  const pay=Math.round(base*mult*speedMult*(1+0.2*upLvl('tipjar')));  // + Bigger Tip Jar
+  let pay=Math.round(base*mult*speedMult*(1+0.2*upLvl('tipjar')));  // + Bigger Tip Jar
+  if(HH.active && (d.dish==='wsour'||d.dish==='gsour')){ pay=Math.round(pay*HH_BONUS); HH.served++; HH.cash+=pay; }   // HAPPY HOUR: sour bonus + rush tally
   DAY.cash+=pay; DAY.served++; DAY.carry=null;
   const wp=new V3(d.x,1.9,d.z-0.5);
   popWord(wp, (perfect?'PERFECT! ':'')+'$'+pay+(DAY.combo>1?' x'+DAY.combo:'')+(fast?' FAST!':''), perfect?'#ffd86b':(fast?'#8be27a':'#e9d8b8'), 30);
@@ -8073,6 +8106,9 @@ function startDay(){
   if(RUN.day>=3 && RUN.lastSharkWeek!==weekOf(RUN.day) && Math.random()<0.5){
     DAY.sharkPending=true; DAY.sharkAt=DAY.t*rand(0.45,0.72); RUN.lastSharkWeek=weekOf(RUN.day);   // DAY.t counts down -> fires partway through
   }
+  // HAPPY HOUR: a mid-shift sour rush, every shift (independent of the weekly shark).
+  HH.active=false; HH.served=0; HH.cash=0;
+  DAY.hhPending = sourPool().length>0; DAY.hhAt = DAY.t*rand(0.45,0.62);   // fires around the middle of the shift
   // roguelite fork + card effects
   DAY.patienceMul=RUN.patienceMul||1;
   // (offerCards moved to the back-office shop screen -- calling it here rendered the cards
@@ -8142,19 +8178,19 @@ function chopAnim(dt){
     }
   }
 }
-/* ---- FAULTLINE: the floor reconfigures at a set moment (level moves your modules) ---- */
-/* (faultline shiftKitchen/triggerShift DELETED -- the mid-shift layout mutation is retired for good;
-   the weekly shark is the only mid-shift event.) */
 function updateDay(dt){
   DAY.t-=dt;
-  // SHARK EVENT (retired the faultline): ~once a week a shark flops in partway through the shift.
+  // SHARK EVENT: ~once a week a shark flops in partway through the shift (holds off during happy hour).
   if(SHARK.active) updateShark(dt);
-  else if(DAY.sharkPending && DAY.t<=DAY.sharkAt){ DAY.sharkPending=false; startShark(); }
+  else if(DAY.sharkPending && !HH.active && DAY.t<=DAY.sharkAt){ DAY.sharkPending=false; startShark(); }
+  // HAPPY HOUR: a mid-shift sour rush (waits its turn if the shark's still flopping).
+  if(DAY.hhPending && !SHARK.active && DAY.t<=DAY.hhAt){ DAY.hhPending=false; startHappyHour(); }
+  if(HH.active){ HH.t-=dt; if(HH.t<=0) endHappyHour(); }
   tickGrease(dt, player);
   // spawn diners while open and a stool is free
   if(DAY.t>0){ DAY.spawnT-=dt; if(DAY.spawnT<=0 && freeSlot()>=0){ spawnDiner();
     for(let gi=0; gi<(RUN.groupAdd||0); gi++) if(Math.random()<0.5 && freeSlot()>=0) spawnDiner();   // LARGE PARTIES card, finally wired
-    DAY.spawnT=rand(SPAWN_MIN,SPAWN_MAX)*DAY.spawnMul; } }
+    DAY.spawnT=rand(SPAWN_MIN,SPAWN_MAX)*DAY.spawnMul*(HH.active?0.5:1); } }   // happy hour: the crowd pours in
   else if(!DAY._lastCall){ DAY._lastCall=true; toast('LAST ORDERS — CLEAR THE ROOM'); if(AC) drum('ride',0.8); }
   if(DAY.comboT>0){ DAY.comboT-=dt; if(DAY.comboT<=0 && DAY.combo>0){ DAY.combo=0; } }   // chez shot-clock: serve again in time or the chain dies
   updateDiners(dt);
