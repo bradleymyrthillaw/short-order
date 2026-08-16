@@ -8954,8 +8954,7 @@ function buildBarRoom(){
   wall(0,-D,W*2,0); wall(0,D,W*2,0); wall(-W,0,D*2,Math.PI/2); wall(W,0,D*2,Math.PI/2);
   // ---- DARTBOARDS on the side walls, each under a little pin-spot
   for(const d of [[-W+0.28,3.2,Math.PI/2],[-W+0.28,-4.8,Math.PI/2],[W-0.28,-1.2,-Math.PI/2]]){
-    const db=_dartboard(); db.position.set(d[0],1.75,d[1]); db.rotation.y=d[2]; R.add(db);
-    const sp=new THREE.PointLight(0xcfe0ff,0.6,4.5,2); sp.position.set(d[0]+(d[0]<0?0.7:-0.7),2.05,d[1]); R.add(sp); }
+    const db=_dartboard(); db.position.set(d[0],1.75,d[1]); db.rotation.y=d[2]; R.add(db); }   // lit by the washes -- no dedicated lamp (mobile light budget)
   // ---- LIGHTING: dark & moody base, but lit in a SPREAD of neon colour. Warm
   //      pin-pools sit over the pool tables; colour washes paint the rest.
   R.userData.lights=[];
@@ -8963,10 +8962,11 @@ function buildBarRoom(){
     const shade=new THREE.Mesh(new THREE.ConeGeometry(0.5,0.5,12), new THREE.MeshStandardMaterial({color:0x1a120a,emissive:0xffa850,emissiveIntensity:1.1,side:THREE.DoubleSide})); shade.position.set(px,H-0.95,-0.5); shade.rotation.x=Math.PI; R.add(shade);
     const cord=new THREE.Mesh(new THREE.CylinderGeometry(0.015,0.015,1.0,4), dmat(0x0c0c0c,.9)); cord.position.set(px,H-0.45,-0.5); R.add(cord);
     const L=new THREE.PointLight(0xffb060,1.7,8,2); L.position.set(px,H-1.35,-0.5); R.add(L); R.userData.lights.push(L); }
-  // colour washes -- each edge/corner its own hue
-  for(const b of [[0,2.6,-D+2.2,NEON.blue,3.0,17],[-6,1.2,-D+1.8,NEON.cyan,2.0,11],[6,1.2,-D+1.8,NEON.purple,2.0,11],
-                  [-10,2.6,4,NEON.mag,2.2,15],[10,2.6,4,NEON.purple,2.2,15],[0,2.4,D-2.0,NEON.pink,1.9,15],
-                  [-7.5,1.3,-0.5,NEON.green,1.1,7],[7.5,1.3,-0.5,NEON.cyan,1.1,7]]){
+  // colour washes -- a lean set of wide lights carries the room colour (the neon
+  // strips/grid/LEDs glow via emissive+bloom, which cost nothing, so a handful of
+  // real lights is plenty). Kept small on purpose for the mobile light budget.
+  for(const b of [[0,2.6,-D+2.2,NEON.blue,3.4,19],[-10,2.4,4,NEON.mag,2.6,17],[10,2.4,4,NEON.purple,2.6,17],
+                  [0,2.4,D-2.0,NEON.pink,2.2,17],[0,1.1,-D+1.8,NEON.cyan,2.4,13]]){
     const L=new THREE.PointLight(b[3],b[4],b[5],2); L.position.set(b[0],b[1],b[2]); R.add(L); R.userData.lights.push(L); }
   // neon strips run the tops of all four walls -- a different colour per wall
   for(const s of [[-W+0.35,0,0.08,0.1,D*2-2,NEON.purple],[W-0.35,0,0.08,0.1,D*2-2,NEON.pink],[0,-D+0.35,W*2-2,0.1,0.08,NEON.blue],[0,D-0.35,W*2-2,0.1,0.08,NEON.cyan]]){
@@ -9015,8 +9015,7 @@ function buildBarRoom(){
     const col=PCOL[pi], L=pt.userData.L, Wd=pt.userData.Wd, tY=pt.userData.topY;
     // neon glow along the rail + a colour kiss from below (each table its own hue)
     for(const r of [[0,Wd/2+0.04,L+0.3,0.05],[0,-Wd/2-0.04,L+0.3,0.05],[L/2+0.04,0,0.05,Wd+0.3],[-L/2-0.04,0,0.05,Wd+0.3]]){
-      const g=new THREE.Mesh(new THREE.BoxGeometry(r[2],0.04,r[3]), emat(col,2.2)); g.position.set(px+r[0],tY+0.17,-0.5+r[1]); R.add(g); }
-    const cl=new THREE.PointLight(col,1.4,6,2); cl.position.set(px,0.7,-0.5); R.add(cl); R.userData.lights.push(cl);
+      const g=new THREE.Mesh(new THREE.BoxGeometry(r[2],0.04,r[3]), emat(col,2.6)); g.position.set(px+r[0],tY+0.17,-0.5+r[1]); R.add(g); }   // emissive rail glows the table's hue -- no real light needed
     const nW=(pi===1?3:2);
     for(let k=0;k<nW;k++){ const wm=makeWeaponMesh(POOLW[wi++%POOLW.length]); if(!wm) continue;
       const ox=(k-(nW-1)/2)*0.72;
@@ -9038,6 +9037,10 @@ function buildBarRoom(){
 function enterBarRoom(){
   buildBarRoom();
   arena.visible=false; barRoom.visible=true;
+  // the terrace's own lights illuminate a now-hidden scene -- switch them OFF
+  // (visible=false actually drops them from the shader's light list; intensity=0
+  // would not). Slashes the forward-light count so the bar stays mobile-friendly.
+  for(const L of [goldUp,orangePool,yellowSpark,stoveGlow,backRim,coolCounter,(arena.userData&&arena.userData.lampLight)]){ if(L) L.visible=false; }
   if(BARLIGHT0.bg===undefined){ BARLIGHT0.bg=(scene.background&&scene.background.getHex)?scene.background.getHex():0x140d07;
     BARLIGHT0.hemi=hemi.intensity; BARLIGHT0.key=key.intensity; BARLIGHT0.fill=fill.intensity;
     BARLIGHT0.hcol=(hemi.color&&hemi.color.getHex)?hemi.color.getHex():0xb03a2a;
@@ -9057,6 +9060,7 @@ function enterBarRoom(){
 }
 function exitBarRoom(){
   if(barRoom) barRoom.visible=false; arena.visible=true;
+  for(const L of [goldUp,orangePool,yellowSpark,stoveGlow,backRim,coolCounter,(arena.userData&&arena.userData.lampLight)]){ if(L) L.visible=true; }   // terrace lights back on
   if(BARLIGHT0.bg!==undefined){ if(scene.background&&scene.background.setHex) scene.background.setHex(BARLIGHT0.bg);
     hemi.intensity=BARLIGHT0.hemi; key.intensity=BARLIGHT0.key; fill.intensity=BARLIGHT0.fill;
     if(hemi.color&&hemi.color.setHex&&BARLIGHT0.hcol!=null) hemi.color.setHex(BARLIGHT0.hcol);
