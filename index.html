@@ -3501,6 +3501,7 @@ function updatePlayer(dt, pad, actor){
   const REMOTE = !!(actor && actor!==player);
   const COOKING=(GAME.mode==='day'||GAME.mode==='plan'||GAME.mode==='after');   // day shift / planning / bottle service: movement only, no combat
   if(P.dead){ poseChef(P,true,dt); return; }
+  if((P._tossed||0)>0){ updateTossedPlayer(P,dt); poseChef(P,true,dt); return; }   // co-op: flying as a partner-tossed missile
   if(P.grabbed){ handleGrab(P,dt,pad); poseChef(P,true,dt); return; }
   if(P.steal){ updateSteal(P,dt,pad); poseChef(P,true,dt); return; }   // wrestling an armed enemy for their weapon
   // ----- squash decay -----
@@ -3647,7 +3648,9 @@ function updatePlayer(dt, pad, actor){
     let ax=mv.x, az=mv.z; const al=Math.hypot(ax,az);
     if(al>1e-3){ ax/=al; az/=al; } else { ax=Math.sin(P.facing); az=Math.cos(P.facing); }
     const barTarget = moving ? (rushTarget(P, ax, az) || grabTarget(P, GRAB_REACH, 1.4)) : grabTarget(P, GRAB_REACH, 1.4);
+    const _mate=coopPartner(P);
     if(P.wpn==='plate' && tryServeHangry(P)){ /* handed the plate to a hangry customer */ }
+    else if(!barTarget && _mate && !_mate.dead && !(_mate._tossed>0) && Math.hypot(_mate.pos.x-P.pos.x,_mate.pos.z-P.pos.z)<1.4){ tossPartner(P,_mate); }   // co-op: yeet your partner
     else if(P.hold){ throwHeld(P); }
     else if(atBar(P) && !barTarget){ chugDrink(P); }            // at the bar, nobody in reach: chug
     else if(moving){
@@ -3938,6 +3941,52 @@ function updatePlayer(dt, pad, actor){
 function updatePlayer2(dt, pad){
   if(!window.player2) return;
   updatePlayer(dt, pad, window.player2);
+}
+/* ---- CO-OP MISCHIEF: partner toss + wave-clear high-five ---- */
+function coopPartner(P){ return (P===player)?(window.player2||null):(P===window.player2?player:null); }
+// PARTNER TOSS (TMNT's most-loved dumb move): grab your co-op partner and hurl
+// them as a living missile -- they get i-frames on the way and a slam on landing.
+function tossPartner(thrower, mate){
+  if(!mate || mate.dead || mate.grabbed || (mate._tossed||0)>0 || mate.hold || mate.steal) return false;
+  const ang=thrower.facing;
+  mate._tossed=0.7; mate._tvx=Math.sin(ang)*11; mate._tvz=Math.cos(ang)*11; mate._tvy=7;
+  mate.attack=null; mate.dodge=null; mate.tackle=null; mate.iframe=Math.max(mate.iframe,0.9);
+  thrower.iframe=Math.max(thrower.iframe,0.3); thrower.grabCD=0.5;
+  shake(0.4); if(AC) sfx.thud(0.7); haptic(0.6,0.6,120);
+  popWord({x:thrower.pos.x,y:2.3,z:thrower.pos.z},'YEET!','#ffe03d',24);
+  return true;
+}
+function updateTossedPlayer(P,dt){
+  P._tossed-=dt; P.iframe=Math.max(P.iframe,0.12);
+  P.pos.x+=P._tvx*dt; P.pos.z+=P._tvz*dt;
+  P._tvy-=26*dt; P.pos.y+=P._tvy*dt;
+  P.facing+=dt*18;                                   // tumble
+  collide(P.pos,P.r);
+  const rest=restY(P.pos.x,P.pos.z,P.pos.y,P.r);
+  if(P.pos.y<=rest || P._tossed<=0){ P.pos.y=rest; P._tossed=0; P.vy=0; partnerSlam(P); }
+}
+function partnerSlam(P){
+  const R=2.8, cp=P.pos.clone(); cp.y=0.1;
+  for(const e of enemies){ if(e.dead||e.boss) continue;
+    const d=Math.hypot(e.pos.x-P.pos.x,e.pos.z-P.pos.z); if(d>R) continue;
+    const ang=Math.atan2(e.pos.x-P.pos.x,e.pos.z-P.pos.z);
+    e.hp-=24; e.vel.x+=Math.sin(ang)*10; e.vel.z+=Math.cos(ang)*10; e.stagger=Math.max(e.stagger,0.7);
+    if(e.hp<=0) killChef(e,ang); else knockDown(e,ang,1.2);
+  }
+  ring(cp,COL.flame,R); ring(cp,0xffffff,R*0.6); burst(P.pos.clone().setY(0.8),20,0xffb060,1.9);
+  shake(0.8); hitstop(0.08); if(AC) sfx.thud(1); haptic(0.8,0.7,180);
+  popWord({x:P.pos.x,y:2.0,z:P.pos.z},'💥 PARTNER SLAM!','#ff6a1e',26);
+}
+// WAVE-CLEAR HIGH-FIVE: meet in the middle after a wave for a small heal. Pure
+// ritual, zero mechanics -- and only if you're actually near each other.
+function coopHighFive(){
+  const P2=window.player2; if(!P2||!player||player.dead||P2.dead) return;
+  if(Math.hypot(player.pos.x-P2.pos.x, player.pos.z-P2.pos.z) > 2.5) return;
+  const heal=20;
+  player.hp=Math.min(player.hpMax,player.hp+heal); P2.hp=Math.min(P2.hpMax,P2.hp+heal); updateHUDHealth();
+  const mid=new V3((player.pos.x+P2.pos.x)/2, 2.0, (player.pos.z+P2.pos.z)/2);
+  popWord(mid,'🙌 HIGH FIVE! +'+heal,'#8fc866',26); ring(mid.clone().setY(0.1),0x8fc866,1.8); burst(mid,16,0x8fc866,1.5);
+  if(AC) sfx.pickup(0.9); haptic(0.4,0.4,90);
 }
 
 /* ================================================================ ENEMY AI */
@@ -6554,6 +6603,7 @@ function spawnWaveChunk(delay){
 }
 function startNextWave(){
   WAVE.resting=true; updateHUDWave();
+  coopHighFive();                                   // co-op: heal if both are together at the wave break
   const nextWave=WAVE.wave+2;
   toast('WAVE '+nextWave+' / '+WAVE.chunks.length);   // just the number -- flavor line dropped
   setTimeout(()=>{
