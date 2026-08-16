@@ -8938,12 +8938,12 @@ function buildBarRoom(){
   const R=new THREE.Group(); R.visible=false; scene.add(R); barRoom=R;
   const W=HALFW, D=HALFD, H=5.0;
   const wallMat=dmat(0x141a26,.92,.02), wainMat=dmat(0x1e2636,.7,.05);   // dark blue-charcoal + slate wainscot
-  const blueMat=new THREE.MeshStandardMaterial({color:0x2f6bff,emissive:0x2f6bff,emissiveIntensity:1.6});
-  const iceMat =new THREE.MeshStandardMaterial({color:0x39a9ff,emissive:0x39a9ff,emissiveIntensity:1.4});
-  // ---- floor: near-black boards + a cold blue inlay strip near the walls
+  const NEON={ blue:0x2f6bff, cyan:0x2de2e6, mag:0xff2fb0, purple:0x9a4dff, pink:0xff5d8f, green:0x36ff9a, amber:0xffb020 };
+  const emat=(hex,i)=>new THREE.MeshStandardMaterial({color:hex,emissive:hex,emissiveIntensity:i==null?1.6:i});
+  // ---- floor: near-black boards + MULTICOLOUR neon inlay strips near the walls
   const floor=new THREE.Mesh(new THREE.BoxGeometry(W*2,0.1,D*2), dmat(0x0b0e16,.9,.03)); floor.position.y=-0.05; floor.receiveShadow=true; R.add(floor);
-  for(const s of [[0,-D+0.7,W*2-1.4,0.1,blueMat],[0,D-0.7,W*2-1.4,0.1,iceMat],[-W+0.7,0,0.1,D*2-1.4,blueMat],[W-0.7,0,0.1,D*2-1.4,iceMat]]){
-    const st=new THREE.Mesh(new THREE.BoxGeometry(s[2],0.04,s[3]), s[4].clone()); st.position.set(s[0],0.04,s[1]); R.add(st); }
+  for(const s of [[0,-D+0.7,W*2-1.4,0.1,NEON.mag],[0,D-0.7,W*2-1.4,0.1,NEON.cyan],[-W+0.7,0,0.1,D*2-1.4,NEON.purple],[W-0.7,0,0.1,D*2-1.4,NEON.green]]){
+    const st=new THREE.Mesh(new THREE.BoxGeometry(s[2],0.04,s[3]), emat(s[4])); st.position.set(s[0],0.04,s[1]); R.add(st); }
   // ---- four enclosing walls (upper plaster + wood wainscot). No ceiling: the high
   //      follow-cam looks down into the room; a dark background reads as the ceiling.
   function wall(x,z,w,rotY){
@@ -8951,23 +8951,25 @@ function buildBarRoom(){
     const wa=new THREE.Mesh(new THREE.BoxGeometry(w,1.3,0.44), wainMat); wa.position.set(x,0.65,z); wa.rotation.y=rotY; R.add(wa);
     const cap=new THREE.Mesh(new THREE.BoxGeometry(w,0.08,0.5), dmat(0x0f1420,.6,.1)); cap.position.set(x,1.32,z); cap.rotation.y=rotY; R.add(cap); }
   wall(0,-D,W*2,0); wall(0,D,W*2,0); wall(-W,0,D*2,Math.PI/2); wall(W,0,D*2,Math.PI/2);
-  // ---- DARTBOARDS on the side walls, each under a cold little pin-spot
+  // ---- DARTBOARDS on the side walls, each under a little pin-spot
   for(const d of [[-W+0.28,3.2,Math.PI/2],[-W+0.28,-4.8,Math.PI/2],[W-0.28,-1.2,-Math.PI/2]]){
     const db=_dartboard(); db.position.set(d[0],1.75,d[1]); db.rotation.y=d[2]; R.add(db);
-    const sp=new THREE.PointLight(0x9fc0ff,0.6,4.5,2); sp.position.set(d[0]+(d[0]<0?0.7:-0.7),2.05,d[1]); R.add(sp); }
-  // ---- LIGHTING: dark + moody. Dim WARM pin-pools only over the pool tables;
-  //      everything else is a cold BLUE glow (neon strips, washes, under-bar).
+    const sp=new THREE.PointLight(0xcfe0ff,0.6,4.5,2); sp.position.set(d[0]+(d[0]<0?0.7:-0.7),2.05,d[1]); R.add(sp); }
+  // ---- LIGHTING: dark & moody base, but lit in a SPREAD of neon colour. Warm
+  //      pin-pools sit over the pool tables; colour washes paint the rest.
   R.userData.lights=[];
   for(const px of [-7.5,0,7.5]){
     const shade=new THREE.Mesh(new THREE.ConeGeometry(0.5,0.5,12), new THREE.MeshStandardMaterial({color:0x1a120a,emissive:0xffa850,emissiveIntensity:1.1,side:THREE.DoubleSide})); shade.position.set(px,H-0.95,-0.5); shade.rotation.x=Math.PI; R.add(shade);
     const cord=new THREE.Mesh(new THREE.CylinderGeometry(0.015,0.015,1.0,4), dmat(0x0c0c0c,.9)); cord.position.set(px,H-0.45,-0.5); R.add(cord);
     const L=new THREE.PointLight(0xffb060,1.7,8,2); L.position.set(px,H-1.35,-0.5); R.add(L); R.userData.lights.push(L); }
-  // cold blue washes -- the signature glow
-  for(const b of [[0,2.6,-D+2.2,0x2f6bff,3.2,17],[-9,2.4,3,0x2f6bff,1.5,12],[9,2.4,3,0x2f6bff,1.5,12],[0,1.1,-D+2.0,0x39a9ff,2.2,10],[0,2.2,D-2.0,0x2f6bff,1.4,13]]){
+  // colour washes -- each edge/corner its own hue
+  for(const b of [[0,2.6,-D+2.2,NEON.blue,3.0,17],[-6,1.2,-D+1.8,NEON.cyan,2.0,11],[6,1.2,-D+1.8,NEON.purple,2.0,11],
+                  [-10,2.6,4,NEON.mag,2.2,15],[10,2.6,4,NEON.purple,2.2,15],[0,2.4,D-2.0,NEON.pink,1.9,15],
+                  [-7.5,1.3,-0.5,NEON.green,1.1,7],[7.5,1.3,-0.5,NEON.cyan,1.1,7]]){
     const L=new THREE.PointLight(b[3],b[4],b[5],2); L.position.set(b[0],b[1],b[2]); R.add(L); R.userData.lights.push(L); }
-  // blue neon strips run the tops of all four walls
-  for(const sx of [-W+0.35,W-0.35]){ const strip=new THREE.Mesh(new THREE.BoxGeometry(0.08,0.1,D*2-2), blueMat.clone()); strip.position.set(sx,3.6,0); R.add(strip); }
-  for(const sz of [-D+0.35,D-0.35]){ const strip=new THREE.Mesh(new THREE.BoxGeometry(W*2-2,0.1,0.08), blueMat.clone()); strip.position.set(0,3.6,sz); R.add(strip); }
+  // neon strips run the tops of all four walls -- a different colour per wall
+  for(const s of [[-W+0.35,0,0.08,0.1,D*2-2,NEON.purple],[W-0.35,0,0.08,0.1,D*2-2,NEON.pink],[0,-D+0.35,W*2-2,0.1,0.08,NEON.blue],[0,D-0.35,W*2-2,0.1,0.08,NEON.cyan]]){
+    const strip=new THREE.Mesh(new THREE.BoxGeometry(s[2],s[3],s[4]), emat(s[5])); strip.position.set(s[0],3.6,s[1]); R.add(strip); }
   // ---- THE BAR: a front counter pulled forward, a walkable bartender PIT behind
   //      it, then the stocked back-bar hard against the rear wall.
   const BW=13, BD=1.6, BBZ=-D+0.9;   // BBZ = back-bar line (against the wall)
@@ -8975,7 +8977,7 @@ function buildBarRoom(){
   // front counter (drinks are served here)
   const bg=new THREE.Group(); bg.position.set(BARCTR.x,0,BARCTR.z); R.add(bg);
   const body=new THREE.Mesh(new THREE.BoxGeometry(BW,1.15,BD), dmat(0x4a2f1a,.85,.05)); body.position.y=0.58; body.castShadow=true; bg.add(body);
-  const panel=new THREE.Mesh(new THREE.BoxGeometry(BW+0.05,1.0,0.06), new THREE.MeshStandardMaterial({color:0x0c1424,emissive:0x2f6bff,emissiveIntensity:.55})); panel.position.set(0,0.55,BD/2+0.03); bg.add(panel);
+  const panel=new THREE.Mesh(new THREE.BoxGeometry(BW+0.05,1.0,0.06), new THREE.MeshStandardMaterial({color:0x240c18,emissive:0xff2fb0,emissiveIntensity:.55})); panel.position.set(0,0.55,BD/2+0.03); bg.add(panel);   // magenta under-bar glow
   const top=new THREE.Mesh(new THREE.BoxGeometry(BW+0.35,0.14,BD+0.25), dmat(0x2a1810,.35,.25)); top.position.y=1.2; top.castShadow=true; bg.add(top);
   const rail=new THREE.Mesh(new THREE.BoxGeometry(BW,0.06,0.06), new THREE.MeshStandardMaterial({color:0xc79a3a,metalness:.75,roughness:.3})); rail.position.set(0,0.2,BD/2+0.28); bg.add(rail);
   // back-bar: its own structure against the rear wall -> the pit opens up between
@@ -8990,8 +8992,9 @@ function buildBarRoom(){
   for(let tier=0;tier<3;tier++){ const sy=1.5+tier*0.6;
     const shelf=new THREE.Mesh(new THREE.BoxGeometry(BW-1.0,0.05,0.34), dmat(0x6a4a28,.7)); shelf.position.set(0,sy-0.03,0.12); bb.add(shelf);
     const n=15; for(let i=0;i<n;i++){ const x=-BW/2+0.8+i*(BW-1.6)/(n-1); bb.add(bottle(x,sy,LIQ[(i+tier*2)%LIQ.length],0.26+((i*5+tier)%4)*0.04)); } }
-  // blue LED strips frame the bottles (no sign -- dark & moody)
-  for(const ly of [1.34,3.18]){ const led=new THREE.Mesh(new THREE.BoxGeometry(BW-0.8,0.05,0.05), new THREE.MeshStandardMaterial({color:0x2f6bff,emissive:0x2f6bff,emissiveIntensity:1.5})); led.position.set(0,ly,0.16); bb.add(led); }
+  // LED strips frame the bottles in two hues (no sign -- moody, but colourful)
+  const _led=[0xff2fb0,0x2de2e6];
+  [1.34,3.18].forEach((ly,i)=>{ const led=new THREE.Mesh(new THREE.BoxGeometry(BW-0.8,0.05,0.05), new THREE.MeshStandardMaterial({color:_led[i],emissive:_led[i],emissiveIntensity:1.6})); led.position.set(0,ly,0.16); bb.add(led); });
   R.userData.sign=null;
   // pit dressing so the bigger back area doesn't read empty: a low cabinet + kegs
   const cab=new THREE.Mesh(new THREE.BoxGeometry(BW-1.5,0.9,0.7), dmat(0x3a2012,.6)); cab.position.set(0,0.45,BBZ+1.15); cab.castShadow=true; R.add(cab);
@@ -9032,7 +9035,7 @@ function enterBarRoom(){
     if(scene.fog){ BARLIGHT0.fogfar=scene.fog.far; BARLIGHT0.fogcol=scene.fog.color.getHex(); }
     if(typeof BLOOM!=='undefined'&&BLOOM){ BARLIGHT0.bs=BLOOM.strength; BARLIGHT0.br=BLOOM.radius; BARLIGHT0.bt=BLOOM.threshold; } }
   if(scene.background&&scene.background.setHex) scene.background.setHex(0x070b14);   // near-black, cold blue
-  hemi.intensity=0.55; if(hemi.color&&hemi.color.setHex) hemi.color.setHex(0x2a3f66);   // low, cool sky fill
+  hemi.intensity=0.6; if(hemi.color&&hemi.color.setHex) hemi.color.setHex(0x342a4d);   // low neutral-purple fill so the colour washes read true
   key.intensity=0.3; if(key.color&&key.color.setHex) key.color.setHex(0x9fb6e0);         // dim cool key from above
   fill.intensity=0.45; if(fill.color&&fill.color.setHex) fill.color.setHex(0x2f5fff);    // blue rim
   if(scene.fog){ scene.fog.color.setHex(0x070b14); scene.fog.far=48; }
