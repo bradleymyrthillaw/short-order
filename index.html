@@ -3122,14 +3122,22 @@ function nearestEnemy(fromPos, facingYaw, cone){
 }
 
 /* ================================================================ COMBAT */
-const ATK_SWING_MUL=2;   // 2x slower, weightier SWING (windup+active) -- the anim scrubs to A.dur.
-                         // recovery is NOT scaled: a doubled tail is dead time between hits. combos
-                         // also cancel the recovery entirely (see the integrate block below).
+/* per-CLASS swing scaling (windup only; recovery stays 1x -- a scaled tail is
+   dead time between hits, and combos cancel it anyway). One global 2x made every
+   weapon scale identically: heavies, whose base wind is already ~3x a light's,
+   landed past the playable band (castiron heavy hit a 1.02s windup). Lights keep
+   the full 2x for heft; heavies need less because the WEAPONS table already
+   carries their weight. The active/contact window scales with HEFT instead of
+   riding the mul: a cast iron dwells in the target ~2x longer than a knife
+   flick, which also spaces the combo-cancel (hitAt + active*0.5) into a
+   per-class tempo -- light flurries chain tight, heavies land on down-beats. */
+const ATK_SWING_MUL={ light:2.0, medium:1.8, heavy:1.5, shield:1.7 };
+const atkActive=(w,heavy)=>(0.08 + (w.heft==null?0.3:w.heft)*0.10)*(heavy?1.15:1);
 function startAttack(atk){ // atk shared by player/enemy: {heavy}
   const A=atk.actor, w=WEAPONS[atk.wpn];
   if(A.attack||A.stagger>0||A.dead||(A.dodge)) return false;
   if(atk.heavy && w.dur!==Infinity && A.dur<2 && A.wpn!=='fists'){ /* not enough for heavy; allow but will break */ }
-  const M=ATK_SWING_MUL, wind=w.wind*(atk.heavy?1.5:1)*M, active=0.09*M, rec=w.rec*(atk.heavy?1.3:1);
+  const M=ATK_SWING_MUL[w.cls]||1.8, wind=w.wind*(atk.heavy?1.5:1)*M, active=atkActive(w,atk.heavy), rec=w.rec*(atk.heavy?1.3:1);
   A.attack={ wpn:atk.wpn, heavy:atk.heavy, t:0, wind, active, rec, dur:wind+active+rec,
     hitAt:wind, hit:false, side:(A.comboStep%2===0)?1:-1,
     shape:(A.wpn==='fists'
@@ -3160,7 +3168,7 @@ function attackDrive(a){
     f = rk<0.45 ? (1 - rk*0.5)                          // follow through -- keep driving past contact
                 : Math.max(0, 1-rk)*0.7;                // then decelerate into recovery
   }
-  return f * base * combo * (A.heavy?6.8:5.2);
+  return f * base * combo * (A.heavy?6.8:5.2) * (0.7 + 0.5*(w&&w.heft!=null?w.heft:0.3));   // heft deepens the step-in: cast iron commits, a knife stays darty
 }
 function resolveHit(A, isPlayer){
   const w=WEAPONS[A.attack.wpn], heavy=A.attack.heavy;
@@ -3175,7 +3183,12 @@ function resolveHit(A, isPlayer){
     return;
   }
   const reach=w.reach + (isPlayer?0.25:0.1) + (A.reachBonus||0);   // a boss (Vince) reaches further
-  const dmg=(heavy?w.heavy:w.light) * (isPlayer? (1+Math.min(GAME.combo,8)*0.03)*(1+0.45*(player._drunk||0)) : (A.dmgMul||1));   // drunk hits harder; a boss hits WAY harder
+  // FINISHER BEAT: every 3rd LANDED hit in a string is the down-beat (GAME.combo
+  // counts prior landed hits, so %3===2 fires on the hit that becomes the 3rd).
+  // More damage, a bigger shove, a harder camera hit -- a mash gets a 1-2-BANG
+  // shape instead of reading as a flat run of identical taps.
+  const finisher = isPlayer && GAME.combo%3===2;
+  const dmg=(heavy?w.heavy:w.light) * (isPlayer? (1+Math.min(GAME.combo,8)*0.03)*(1+0.45*(player._drunk||0))*(finisher?1.5:1) : (A.dmgMul||1));   // drunk hits harder; a boss hits WAY harder
   const facing=A.facing;
   const origin=A.pos;
   let landed=false;
@@ -3248,7 +3261,7 @@ function resolveHit(A, isPlayer){
     T.hp-=taken;
     T.hurt=1;
     // knockback
-    let kb=(heavy?0.9:0.5)*(w.knock?1.7:1)*(blocked?0.3:1)*Emul;   // swing energy drives the shove
+    let kb=(heavy?0.9:0.5)*(w.knock?1.7:1)*(0.6+0.6*(w.heft==null?0.3:w.heft))*(finisher?1.5:1)*(blocked?0.3:1)*Emul;   // swing energy + heft drive the shove: cast iron launches, a spatula pats
     if(!boss){
       T.stagger=Math.max(T.stagger, (blocked?0.15:w.stagger*(heavy?1.2:0.8)) );
       // Every clean hit on an ENEMY makes them stumble -- knockback + a stagger
@@ -3280,9 +3293,9 @@ function resolveHit(A, isPlayer){
     const col = blocked?0xffffff : (w.metal?0xffe6a0:0xff9a4a);
     burst(cpos, Math.round(((blocked?6:11) + weight*30)*bw + 2), col, (0.9 + weight*2.4)*bw);
     ring(cpos, w.metal?COL.cream:COL.flame, (1.0 + weight*1.7)*bw);
-    if(weight>0.55 && !blocked){ ring(cpos, 0xffffff, 1.5+weight); burst(cpos, 8, 0xffffff, 1.6+weight); }
-    shake((0.22 + weight*1.5) * (0.65 + (w.shake||0.3)*0.6) * bw);   // chunkier -- and reads the weapon's AUTHORED shake so a cast-iron BONK out-kicks a spatula tink
-    hitstop(Math.min(0.22, 0.05 + weight*0.17) * (blocked?0.5:1));   // stop frames scale with weight but CAP at ~13f -- an uncapped heavy froze 20-25f, reading as a stall (and stacking dead time onto the combo-cancel, which waits out the freeze)
+    if((weight>0.55 || finisher) && !blocked){ ring(cpos, 0xffffff, 1.5+weight); burst(cpos, 8, 0xffffff, 1.6+weight); }
+    shake((0.22 + weight*1.5) * (0.65 + (w.shake||0.3)*0.6) * (finisher?1.25:1) * bw);   // chunkier -- and reads the weapon's AUTHORED shake so a cast-iron BONK out-kicks a spatula tink
+    hitstop(Math.min(0.22, 0.05 + weight*0.17) * (finisher?1.2:1) * (blocked?0.5:1));   // stop frames scale with weight but CAP at ~13f -- an uncapped heavy froze 20-25f, reading as a stall (and stacking dead time onto the combo-cancel, which waits out the freeze). the finisher down-beat runs a touch past the cap.
     const power=Math.min(1, weight*1.15) * bw;
     impactFrames(weight>0.75?4:(weight>0.45?3:(weight>0.2?2:1)), blocked?0x7fb2d6:(power>0.6?0xFFE03D:0xFFF6E3), 0x140c07);
     hitPost(power, blocked?0x7fb2d6:(w.metal?0xffe6a0:0xff6a1e));
@@ -3301,9 +3314,11 @@ function resolveHit(A, isPlayer){
       // Brad's Ableton drums on the impact: cast iron = kick drum, other
       // stainless-steel pans/utensils = crash cymbal (metal only), bare-hand
       // fighting impacts land as a tom (the wooden torch rides along with them).
-      if(w.key==='castiron') drum('kick', 0.6+weight*0.5);
-      else if(w.metal)       drum('crash', 0.4+weight*0.55, 0.96+weight*0.12);
-      else                   drum('tom', 0.35+weight*0.4);
+      const dj=0.94+Math.random()*0.12;   // per-hit detune -- rapid same-weapon combos stop machine-gunning
+      if(w.key==='castiron') drum('kick', 0.6+weight*0.5, dj);
+      else if(w.metal)       drum('crash', 0.4+weight*0.55, (0.96+weight*0.12)*dj);
+      else                   drum('tom', 0.35+weight*0.4, dj);
+      if(finisher && w.key!=='castiron') drum('kick', 0.55+weight*0.3);   // the 3rd-hit down-beat lands on the kick drum
       if(isPlayer){
         // crank the rumble -- these handhelds can take a LOT more than we were
         // giving, and the feedback is the whole point. Near-max strong motor on
@@ -3625,6 +3640,13 @@ function updatePlayer(dt, pad, actor){
     const chaining = P.chainT>0;
     let tgt = (chaining && P.comboTarget && !P.comboTarget.dead) ? P.comboTarget
             : (P.lockOn||nearestEnemy(P.pos,P.facing,1.1)||nearestEnemy(P.pos,P.facing,null));
+    // aim-assist only bends toward someone REACHABLE: the nearestEnemy fallback has
+    // no range cap, so swinging at air used to pirouette the chef toward an enemy
+    // across the room. Lock-on and the committed combo target stay exempt.
+    if(tgt && tgt!==P.lockOn && !(chaining && tgt===P.comboTarget)){
+      const dd=Math.hypot(tgt.pos.x-P.pos.x, tgt.pos.z-P.pos.z);
+      if(dd>4.5) tgt=null;
+    }
     if(tgt){ const dx=tgt.pos.x-P.pos.x,dz=tgt.pos.z-P.pos.z; P.attackAim=Math.atan2(dx,dz); }
     else P.attackAim=P.facing;
     P.comboStep = chaining ? (P.comboStep+1) : 0;   // cycle the swing shape
@@ -3671,8 +3693,13 @@ function updatePlayer(dt, pad, actor){
     // PHYSICAL COMBO LOCK: until this swing has thrown its hit, keep re-aiming at
     // the committed enemy as it moves (within lunge range) so the step-in and the
     // strike track the exact enemy we're comboing -- not whoever wandered in front.
-    if(!A.hit && P.comboTarget && !P.comboTarget.dead){
-      const dx=P.comboTarget.pos.x-P.pos.x, dz=P.comboTarget.pos.z-P.pos.z;
+    // The OPENING swing of a chain has no comboTarget yet (it's set on the first
+    // landed hit), so fall back to the swing's own picked target -- otherwise the
+    // first hit aims at a press-time snapshot and whiffs behind a moving enemy.
+    const trk=(P.comboTarget && !P.comboTarget.dead) ? P.comboTarget
+            : ((A.target && !A.target.dead) ? A.target : null);
+    if(!A.hit && trk){
+      const dx=trk.pos.x-P.pos.x, dz=trk.pos.z-P.pos.z;
       if(dx*dx+dz*dz < 3.6*3.6) A.aim=Math.atan2(dx,dz);
     }
     // snap facing to aim
@@ -4060,8 +4087,8 @@ function beginEnemyAttack(e,aim){
   // reaction window the player learns -- inside the *M it was silently doubled),
   // with a floor so fast enemies can't wind up under human reaction time.
   // heavy recovery mirrors the player's 1.3x for consistent trade windows.
-  const w=WEAPONS[e.wpn], M=ATK_SWING_MUL;
-  const wind=Math.max(w.wind*e.wind*(heavy?1.4:1)*M + 0.14, heavy?0.5:0.3), active=0.09*M, rec=w.rec*(heavy?1.3:1);
+  const w=WEAPONS[e.wpn], M=ATK_SWING_MUL[w.cls]||1.8;
+  const wind=Math.max(w.wind*e.wind*(heavy?1.4:1)*M + 0.14, heavy?0.5:0.3), active=atkActive(w,heavy), rec=w.rec*(heavy?1.3:1);
   e.attack={ wpn:e.wpn, heavy, t:0, wind, active, rec, dur:wind+active+rec, hitAt:wind, hit:false,
     side:(Math.random()<0.5?1:-1),
     shape:(e.wpn==='fists' ? PUNCHES[(Math.random()*PUNCHES.length)|0] : (heavy?FINISH:SWINGS[(Math.random()*SWINGS.length)|0])), aim };
