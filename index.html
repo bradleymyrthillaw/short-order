@@ -3572,11 +3572,7 @@ function updatePlayer(dt, pad, actor){
   // inside it is deflected (no damage) and staggers the attacker wide open for a
   // counter -- rewarding a timed press over a passive hold-block. (See resolveHit.)
   const guardHeld = !COOKING && (pad.guard||(!REMOTE&&(KEY[' ']||TOUCH.guard))) && P.stagger<=0 && !P.attack && !P.dodge;
-  if(guardHeld && !P._guardPrev){ P.parryT=PARRY_WINDOW;   // rising edge -> parry window
-    // DOUBLE-TAP GUARD -> KITCHEN TORNADO (crowd-clear special, costs HP)
-    if(GAME.t-(P._lastGuardTap||-9) < 0.32){ if(kitchenTornado(P)) P._lastGuardTap=-9; }
-    else P._lastGuardTap=GAME.t;
-  }
+  if(guardHeld && !P._guardPrev) P.parryT=PARRY_WINDOW;   // rising edge -> parry window
   P._guardPrev=guardHeld;
   P.guard=guardHeld;
   P.guardV=damp(P.guardV, P.guard?1:0, 16, dt);
@@ -3715,8 +3711,11 @@ function updatePlayer(dt, pad, actor){
     else P._fireCD=0;
   }
   // ----- attacks (Cross light / Square heavy / touch) -----
-  const wantLight=!COOKING && P.wpn!=='spudgun' && (pad.light||(!REMOTE&&(tapK('j')||MOUSE.l||consume('lightEdge')))); if(!REMOTE) MOUSE.l=false;
-  const wantHeavy=!COOKING && (pad.heavy||(!REMOTE&&(tapK('k')||MOUSE.r||consume('heavyEdge')))); if(!REMOTE) MOUSE.r=false;
+  let wantLight=!COOKING && P.wpn!=='spudgun' && (pad.light||(!REMOTE&&(tapK('j')||MOUSE.l||consume('lightEdge')))); if(!REMOTE) MOUSE.l=false;
+  let wantHeavy=!COOKING && (pad.heavy||(!REMOTE&&(tapK('k')||MOUSE.r||consume('heavyEdge')))); if(!REMOTE) MOUSE.r=false;
+  // KITCHEN TORNADO: LIGHT + HEAVY together, paid for with stamina (needs >=50%).
+  // Fires before the swing logic and consumes both inputs so no attack comes out.
+  if(wantLight && wantHeavy && !COOKING && kitchenTornado(P)){ wantLight=false; wantHeavy=false; }
   const airborne=P.pos.y>restY(P.pos.x,P.pos.z,P.pos.y,P.r)+0.06;   // relative to the floor OR the prop you're standing on
   // Begin one swing of the chain. Mid-combo it STAYS committed to the enemy we
   // locked onto (comboTarget, set on the first landed hit) so the whole combo
@@ -6239,16 +6238,18 @@ function throwWeapon(P){
   const hp=P.pos.clone(); hp.y=1.5; popWord(hp, w.name.toUpperCase()+' THROW!', '#ffe03d', 22);
 }
 /* KITCHEN TORNADO: the surrounded-panic special every brawler has. A spinning
-   clear-out that knocks down everyone around you and costs a chunk of HP (so
-   it's a real trade, not a spam button). Double-tap GUARD to fire; only when a
-   crowd is actually in range. Hits harder while HEAT is up. */
+   clear-out that knocks down everyone around you. Press LIGHT + HEAVY together;
+   needs at least half a stamina bar and SPENDS half of it, so it competes with
+   sprinting instead of being a spam button. Only when a crowd is in range; hits
+   harder while HEAT is up. */
+const TORNADO_STAM=50;   // stamina required (>=) and spent (bar is 0..100)
 function kitchenTornado(P){
   if(P.attack||P.hold||P.dodge||P.tackle||P.grabbed||P.steal||P.stagger>0||P.dead||GAME.mode!=='play') return false;
-  if((P._tornadoCD||0)>0 || P.hp<=15) return false;
+  if((P._tornadoCD||0)>0 || (P.stamina||0) < TORNADO_STAM) return false;   // needs >=50% stamina
   let near=false; for(const e of enemies){ if(!e.dead && Math.hypot(e.pos.x-P.pos.x,e.pos.z-P.pos.z)<3.6){ near=true; break; } }
-  if(!near) return false;                                     // don't burn HP on empty air
+  if(!near) return false;                                     // don't burn stamina on empty air
   P._tornadoCD=4.5; P._tornado=0.5; P.iframe=Math.max(P.iframe,0.55); P.attack=null;
-  P.hp=Math.max(1, P.hp-12); updateHUDHealth();
+  P.stamina=Math.max(0, (P.stamina||0)-TORNADO_STAM);         // spend half the bar
   const R=3.4, hot=(P._heat||0)>0;
   for(const e of enemies){ if(e.dead||e.boss) continue;
     const d=Math.hypot(e.pos.x-P.pos.x,e.pos.z-P.pos.z); if(d>R) continue;
