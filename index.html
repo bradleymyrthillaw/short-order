@@ -3417,6 +3417,8 @@ function killChef(T, ang){
     if(player.wpn==='spudgun'){ player.dur=(player.dur||0)+60; updateHUDWeapon(); popWord({x:T.pos.x,y:1.4,z:T.pos.z},'+60 SPUDS','#ffe03d',26); }
     else spawnPickup('spudgun', T.pos.x, T.pos.z);          // pickup arms 60 rounds (WEAPONS.spudgun.dur)
   } else if(T.wpn!=='fists' && Math.random()<0.6){ spawnPickup(T.wpn, T.pos.x, T.pos.z); }
+  if(Math.random()<0.20) spawnFood(T.pos.x + rand(-0.4,0.4), T.pos.z + rand(-0.4,0.4));   // a morsel to eat off the deck
+  if(Math.random()<0.12) spawnSlick(T.pos.x, T.pos.z);                                    // a slick to make the crowd pratfall
   const alive=enemies.filter(e=>!e.dead).length;
   updateHUDCooks(alive);
   maybeSpawnWave();
@@ -3857,7 +3859,9 @@ function updatePlayer(dt, pad, actor){
     // Engine.move accel feel: crisp accel on press (GROUND_ACC), a little slide
     // on release (DECEL), and real steering in the air (AIR_ACC, was 3) -- you
     // commit to the arc of a jump but aren't on rails.
-    const acc=airborne ? Engine.move.AIR_ACC : (moving ? Engine.move.GROUND_ACC : Engine.move.DECEL);
+    let acc=airborne ? Engine.move.AIR_ACC : (moving ? Engine.move.GROUND_ACC : Engine.move.DECEL);
+    if(!airborne && greaseAt(P.pos.x,P.pos.z)){ acc*=0.28; if(!P._onGrease){ P._onGrease=1; popWord({x:P.pos.x,y:1.9,z:P.pos.z},'SLIPPERY!','#ffe6a0',18); } }   // slick: low grip -> you glide (never floored)
+    else P._onGrease=0;
     P.vel.x=damp(P.vel.x, mv.x*spd, acc, dt);   // ground: velocity ramps -- accel on press, slide on release
     P.vel.z=damp(P.vel.z, mv.z*spd, acc, dt);
   } else {
@@ -4022,6 +4026,16 @@ function updateEnemy(e, dt){
     return;
   }
 
+  // GREASE SLIP: a moving enemy on a slick pratfalls onto the deck. Placed here --
+  // above the AI's several movement/return paths -- so it fires whatever sub-state
+  // the enemy is in (uses last frame's speed + current position).
+  if(e._slipCD>0) e._slipCD-=dt;
+  if((e.speed||0)>2.0 && !e.boss && (e._slipCD||0)<=0 && greaseAt(e.pos.x,e.pos.z)){
+    e._slipCD=1.6; knockDown(e, e.facing+Math.PI, 1.0);
+    const cp=e.pos.clone(); cp.y=0.3; ring(cp,0xffe6a0,0.9); if(AC) sfx.thud(0.4);
+    popWord({x:e.pos.x,y:1.5,z:e.pos.z}, 'WHOOP!', '#ffe6a0', 20);
+    e.chef.position.copy(e.pos); knockdownPose(e,dt); return;   // start the prone pose this frame
+  }
   if(!_toScratch) _toScratch=new V3();
   const dxP=player.pos.x-e.pos.x, dzP=player.pos.z-e.pos.z;
   const dist=Math.hypot(dxP,dzP)||1e-5, invP=1/dist;
@@ -6072,6 +6086,46 @@ function tickThrown(dt){
     }
   }
 }
+/* ---- FLOOR FOOD: a kill sometimes drops a morsel; walk over it to eat it off
+   the deck for a small heal. The genre's roast-turkey-in-the-wall, chef edition. */
+const FOODS=[]; const _foodGeo=new THREE.SphereGeometry(0.13,8,6);
+function spawnFood(x,z){
+  if(FOODS.length>8) return;
+  const gold=Math.random()<0.45;                                   // gold = a bigger heal
+  const m=new THREE.Mesh(_foodGeo, new THREE.MeshStandardMaterial({color:gold?0xffc24a:0xff7a3a, emissive:gold?0xff9a1e:0xff3b30, emissiveIntensity:0.9, roughness:0.6}));
+  m.position.set(x,0.16,z); m.scale.set(1.1,0.7,1.1); scene.add(m);
+  FOODS.push({x,z,g:m,t:0,heal:gold?24:14});
+}
+function tickFoods(dt){
+  const P=player;
+  for(let i=FOODS.length-1;i>=0;i--){ const f=FOODS[i]; f.t+=dt;
+    f.g.position.y=0.16+Math.sin(GAME.t*4+f.x)*0.045; f.g.rotation.y+=dt*2.2;
+    if(P && !P.dead && GAME.mode==='play' && Math.hypot(P.pos.x-f.x,P.pos.z-f.z)<0.75){
+      P.hp=Math.min(P.hpMax, P.hp+f.heal); updateHUDHealth();
+      const cp=new V3(f.x,1.3,f.z); popWord(cp, pick(['5-SECOND RULE','NOM!','+'+f.heal+' HP','TASTY']), '#8fc866', 22);
+      ring(cp,0x8fc866,0.9); if(AC) sfx.pickup(0.7); haptic(0.3,0.3,60);
+      scene.remove(f.g); FOODS.splice(i,1); continue; }
+    if(f.t>12){ scene.remove(f.g); FOODS.splice(i,1); }             // spoils
+  }
+}
+/* ---- GREASE SLICK: a kill sometimes leaves a slick on the deck. A fast enemy
+   crossing it PRATFALLS (knockdown) -- banana-peel comedy, chef edition. The
+   player gets slidey (see the movement integrator) but never floored. */
+const HAZARDS=[];
+function spawnSlick(x,z){   // NIGHT slick (distinct from the day-mode spawnGrease/GREASE frying-spill system)
+  if(HAZARDS.length>10 || Math.abs(x)>HALFW-0.5 || Math.abs(z)>HALFD-0.5) return;
+  const m=new THREE.Mesh(new THREE.CircleGeometry(0.95,20), new THREE.MeshStandardMaterial({color:0x0e0906, emissive:0x3a2810, emissiveIntensity:0.28, roughness:0.15, metalness:0.7, transparent:true, opacity:0.0, depthWrite:false}));
+  m.rotation.x=-Math.PI/2; m.position.set(x,0.032,z); m.scale.setScalar(0.3); scene.add(m);
+  HAZARDS.push({x,z,r:0.95,g:m,t:0,max:9});
+}
+function tickHazards(dt){
+  for(let i=HAZARDS.length-1;i>=0;i--){ const h=HAZARDS[i]; h.t+=dt;
+    const inK=Math.min(1,h.t/0.4), outK=clamp(1-(h.t-(h.max-1.5))/1.5,0,1), k=Math.min(inK,outK);
+    h.g.scale.setScalar(0.3+0.7*inK); if(h.g.material) h.g.material.opacity=0.85*k;
+    if(h.t>=h.max){ scene.remove(h.g); HAZARDS.splice(i,1); }
+  }
+}
+function greaseAt(x,z){ for(const h of HAZARDS){ if(h.t<0.3) continue; const dx=x-h.x, dz=z-h.z; if(dx*dx+dz*dz < h.r*h.r) return h; } return null; }
 /* ---- SPUD GUN dots: small, fast, FLAT projectiles (no arc) that expire after ~1.5s.
    Separate from the ballistic THROWN pool so they read as rapid-fire bullets. ---- */
 const SPUDS=[]; const _spudGeo=new THREE.SphereGeometry(0.06,6,5);
@@ -6373,6 +6427,8 @@ function startNight(cfg, onEnd){
   // clear
   for(const e of enemies) scene.remove(e.chef); enemies.length=0;
   for(const p of PICKUPS) scene.remove(p.g); PICKUPS.length=0;
+  for(const f of FOODS) scene.remove(f.g); FOODS.length=0;
+  for(const h of HAZARDS) scene.remove(h.g); HAZARDS.length=0;
   tokensUsed=0;
   GAME.kills=0; GAME.combo=0; GAME.maxCombo=0; GAME.hitsLanded=0; GAME.onEnd=onEnd;
   if(typeof dayScene==='function') dayScene(false);          // restore the after-hours look for the brawl
@@ -8189,6 +8245,8 @@ function startPlan(){
   buildGridOverlay(); if(gridGrp) gridGrp.visible=true;
   for(const e of enemies) scene.remove(e.chef); enemies.length=0;
   for(const p of PICKUPS) scene.remove(p.g); PICKUPS.length=0;
+  for(const f of FOODS) scene.remove(f.g); FOODS.length=0;
+  for(const h of HAZARDS) scene.remove(h.g); HAZARDS.length=0;
   if(!player){ player=makePlayer(); attachPlayerHelpers(player); }
   player.pos.set(0,0,-3.5); player.vel.set(0,0,0); player.facing=Math.PI; player.hp=player.hpMax;
   player.wpn='fists'; player.dur=Infinity; equip(player.chef,'fists');
@@ -8410,6 +8468,8 @@ function startDay(){
   // clear any lingering night/pickups
   for(const e of enemies) scene.remove(e.chef); enemies.length=0;
   for(const p of PICKUPS) scene.remove(p.g); PICKUPS.length=0;
+  for(const f of FOODS) scene.remove(f.g); FOODS.length=0;
+  for(const h of HAZARDS) scene.remove(h.g); HAZARDS.length=0;
   if(!player){ player=makePlayer(); attachPlayerHelpers(player); }
   player.pos.set(0,0,-3); player.vel.set(0,0,0); player.facing=Math.PI; player.hp=player.hpMax; player._feet=false;
   player.wpn='fists'; player.dur=Infinity; equip(player.chef,'fists');
@@ -8652,6 +8712,8 @@ function tick(){
   if(window.coopClient) coopClient.tick(sdt);
   tickThrown(dt);   // ballistic toss / frisbee plates
   tickSpuds(dt);    // spud-gun rapid-fire dots
+  tickFoods(dt);    // floor-food morsels (auto-eat heal)
+  tickHazards(dt);  // grease slicks
 
   if(GAME.mode==='play'){
     updatePlayer(sdt, pad);
