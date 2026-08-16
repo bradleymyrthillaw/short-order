@@ -4332,10 +4332,16 @@ const SLAM_STRIKE_FRAC=0.78;   // where the downswing contacts the ground in the
 const SLAM_WINDUP_FRAC=0.42;   // where the overhead descent begins (a mid-air dive skips straight to here)
 /* where each attack clip hits its contact pose -- actionProgress pins this frame
    to A.hitAt so the visual strike lands exactly when the mechanical hit fires.
-   Per-clip because the silhouettes differ: the straight stab contacts early, the
-   big overhead late. Unlisted clips (punch pool etc.) use .default. */
-const ATK_STRIKE_FRAC={ atk_light:0.48, atk_heavy:0.62, atk_bat:0.60,
-  atk_sword:0.55, atk_sword_L:0.55, atk_shield:0.50, atk_shield_L:0.50, default:0.55 };
+   MEASURED, not guessed: each frac is the clip's peak-wrist-speed moment sampled
+   from the baked animation (90 steps, both hands, headless calibration pass).
+   The spread is real -- atk_bat's 6.9s clip swings at 19% then coasts through a
+   long follow-through, while atk_sword contacts at 67%. Mirrored _L variants
+   share their base clip's timeline (the lookup strips the suffix). */
+const ATK_STRIKE_FRAC={ atk_light:0.46, atk_heavy:0.49, atk_bat:0.19,
+  atk_sword:0.67, atk_shield:0.54,
+  c_jab:0.21, c_jabcross:0.26, c_hook:0.46, c_quad:0.51, c_punch:0.37,
+  h_box:0.27, h_knee:0.48, h_elbow:0.60, h_melee:0.38, h_melee2:0.38, h_melee3:0.38,
+  default:0.5 };
 // left-handed (male chef) picks the mirrored (_L) clip when one exists
 function mir(a,name){ return (a&&a.chef&&a.chef.userData&&a.chef.userData.whand===0 && MIXAMO.clips[name+'_L']) ? name+'_L' : name; }
 // move direction relative to facing -> '' (fwd) / '_b' / '_l' / '_r'
@@ -4766,10 +4772,25 @@ function actionProgress(a,name){
     // read as pushed through mud; and since hitlag freezes A.t right at hitAt,
     // the eye now parks on the contact pose for the freeze. (Same idea as
     // SLAM_STRIKE_FRAC above; applies to player and enemy swings alike.)
-    const SF=ATK_STRIKE_FRAC[name]!=null?ATK_STRIKE_FRAC[name]:ATK_STRIKE_FRAC.default;
-    if(A.t<A.hitAt){ const k=clamp(A.t/Math.max(A.hitAt,1e-3),0,1); return SF*Math.pow(k,1.6); }
+    const _base=name.replace(/_L$/,'');   // mirrored variants share the base clip's timeline
+    const SF=ATK_STRIKE_FRAC[_base]!=null?ATK_STRIKE_FRAC[_base]:ATK_STRIKE_FRAC.default;
+    // SPEED GOVERNOR: the scrub maps clip segments onto the attack clock, so a
+    // short attack (a light's ~0.2s windup) crammed half the source clip into a
+    // few frames -- the chef visibly "flipped out" at 4-5x speed and the hit was
+    // already done. Cap playback at ~2.3x real time by ENTERING the clip nearer
+    // the contact pose (skip anticipation the timing can't afford -- same idea
+    // as JUMP_LAUNCH_FRAC skipping the jump crouch) and settling short of the
+    // clip tail (the swing->locomotion crossfade absorbs it). The ease divisors
+    // (1.6 pre / 2 post) budget for the eased segments' PEAK rate, so the cap
+    // holds at the fastest point, not just on average. Long heavy windups fit
+    // their whole segment under the cap and keep the full cinematic swing.
+    const _cc=clipFor(a,name), _cd=(_cc&&_cc.duration)||1.2, _maxR=2.3/_cd;
+    if(A.t<A.hitAt){ const k=clamp(A.t/Math.max(A.hitAt,1e-3),0,1);
+      const span=Math.min(SF, _maxR*A.hitAt/1.6);
+      return (SF-span) + span*Math.pow(k,1.6); }
     const k=clamp((A.t-A.hitAt)/Math.max(A.dur-A.hitAt,1e-3),0,1);
-    return SF + (1-SF)*(1-Math.pow(1-k,2));
+    const span2=Math.min(1-SF, _maxR*(A.dur-A.hitAt)/2);
+    return SF + span2*(1-Math.pow(1-k,2));
   }
   if(/^throw|^toss/.test(name)) return clamp(a._tossT||0,0,1);
   if(name==='hit'||/^react_big/.test(name)) return clamp(1-(a.stagger||0)/0.6,0,1);
