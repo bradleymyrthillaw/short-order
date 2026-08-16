@@ -54,6 +54,28 @@
     background:linear-gradient(90deg,#8b5cf6,#c4b5fd);box-shadow:0 0 8px #a78bfa66;transition:transform .12s linear}
   #stamlabel{position:absolute;left:8px;top:0;font-size:8px;line-height:8px;color:#c4b5fd;
     letter-spacing:.16em;text-shadow:0 1px 1px #000}
+  /* RAGE -- the super meter. Fills as you land hits (faster while HEAT is lit);
+     when it's full the bar glows and the RAGE button lights, and one press spends
+     it on the cinematic rush-flurry-launch-overboard combo. Flame, under stamina. */
+  #ragewrap{height:8px;margin-top:4px;background:#00000066;border:2px solid #00000088;border-radius:2px;
+    box-shadow:0 2px 0 #0007, inset 0 0 0 1px #ffffff14;overflow:hidden;position:relative}
+  #ragefill{position:absolute;inset:0;transform-origin:left;transform:scaleX(0);
+    background:linear-gradient(90deg,#ff3b30,#ff9a1e,#ffd23d);box-shadow:0 0 8px #ff6a1e88;transition:transform .12s linear}
+  #ragelabel{position:absolute;left:8px;top:0;font-size:8px;line-height:8px;color:#ffd7a8;
+    letter-spacing:.16em;text-shadow:0 1px 1px #000}
+  #ragewrap.ready{border-color:#ffd23d;box-shadow:0 0 14px #ff6a1eaa,inset 0 0 0 1px #ffffff33;animation:ragepulse .7s ease-in-out infinite}
+  #ragewrap.ready #ragelabel{color:#fff}
+  @keyframes ragepulse{0%,100%{filter:brightness(1)}50%{filter:brightness(1.65)}}
+  /* RAGE super button (touch only) -- hidden until the meter fills, then pulses
+     at bottom-centre between the thumbs. Desktop unleashes it with the R key. */
+  #bRage{position:absolute;left:50%;bottom:calc(var(--u)*6.5);transform:translateX(-50%) scale(.55);
+    min-width:calc(var(--u)*26);height:calc(var(--u)*11.5);padding:0 calc(var(--u)*3);border:0;border-radius:calc(var(--u)*6);
+    background:linear-gradient(180deg,#ff8a3a,#ff2d2d);color:#1a0a04;font-family:"Anton",sans-serif;
+    font-size:calc(var(--u)*4.6);letter-spacing:.08em;box-shadow:0 6px 0 #7a1204;
+    z-index:5;pointer-events:none;opacity:0;transition:opacity .18s ease,transform .18s ease;display:grid;place-items:center}
+  #bRage.on{opacity:1;pointer-events:auto;transform:translateX(-50%) scale(1);animation:ragebtn .6s ease-in-out infinite}
+  #bRage.press{transform:translateX(-50%) translateY(3px) scale(.98);filter:brightness(1.3)}
+  @keyframes ragebtn{0%,100%{box-shadow:0 6px 0 #7a1204,0 0 22px #ff6a1e99}50%{box-shadow:0 6px 0 #7a1204,0 0 44px #ffd23dff}}
   #wpnrow{display:flex;align-items:center;gap:8px;margin-top:8px}
   #wpnname{font-family:"Anton",sans-serif;font-size:19px;color:var(--cream);
     text-shadow:0 2px 0 #0009;letter-spacing:.03em;white-space:nowrap}
@@ -400,6 +422,7 @@
       <div id="hplabel">HEALTH</div>
     </div>
     <div id="stamwrap"><div id="stamfill"></div><div id="stamlabel">STAMINA</div></div>
+    <div id="ragewrap"><div id="ragefill"></div><div id="ragelabel">RAGE</div></div>
     <div id="wpnrow"><div id="wpnname">BARE HANDS</div><div id="pips"></div></div>
   </div>
   <div id="cooks"><div id="cooksN">0</div><div id="cooksL">COOKS ON THE LINE</div><div id="waveL"></div></div>
@@ -443,6 +466,7 @@
   </div>
   <button id="bGuard" class="b pill" data-hold="guard">GUARD</button>
   <button id="bLock" class="b mini" data-b="lock">LOCK</button>
+  <button id="bRage" data-b="rage">⚡ RAGE</button>
 </div>
 
 <div id="veil">
@@ -2446,12 +2470,12 @@ function burst(pos,n,col,power){
     s.m.visible=true; s.m.position.copy(pos); s.m.material.color.setHex(col); s.m.material.emissive.setHex(col);
     const a=Math.random()*TAU, up=rand(2,6)*power, sp=rand(2,5)*power;
     s.v.set(Math.cos(a)*sp,up,Math.sin(a)*sp); s.life=s.max=rand(0.3,0.6);
-    s.m.scale.setScalar(rand(0.6,1.4)); }
+    s.nofloor=false; s.m.scale.setScalar(rand(0.6,1.4)); }
 }
 function sparkTick(dt){
   for(const s of SPARKS){ if(s.life<=0)continue; s.life-=dt;
     s.v.y-=22*dt; s.m.position.addScaledVector(s.v,dt);
-    if(s.m.position.y<0.05){ s.m.position.y=0.05; s.v.y*=-0.4; s.v.x*=0.6; s.v.z*=0.6; }
+    if(!s.nofloor && s.m.position.y<0.05){ s.m.position.y=0.05; s.v.y*=-0.4; s.v.x*=0.6; s.v.z*=0.6; }   // splash droplets (nofloor) keep falling into the bay
     const k=clamp(s.life/s.max,0,1); s.m.scale.setScalar(k*1.1); s.m.rotation.x+=dt*8; s.m.rotation.y+=dt*10;
     if(s.life<=0)s.m.visible=false; }
 }
@@ -2476,7 +2500,7 @@ function footDust(x,z,vx,vz){
     s.m.material.color.setHex(0x7a6a4e); s.m.material.emissive.setHex(0x1c150c);
     const a=Math.random()*TAU;
     s.v.set(Math.cos(a)*rand(0.4,1.1)-vx*0.28, rand(0.5,1.5), Math.sin(a)*rand(0.4,1.1)-vz*0.28);
-    s.life=s.max=rand(0.22,0.4); s.m.scale.setScalar(rand(0.4,0.8)); }
+    s.life=s.max=rand(0.22,0.4); s.nofloor=false; s.m.scale.setScalar(rand(0.4,0.8)); }
 }
 
 /* floating words (DOM) */
@@ -2663,6 +2687,7 @@ function makePlayer(){
     vy:0, jumpCD:0, slam:null, slamHit:0, _air:0,   // vertical jump / air-slam state
     coyoteT:0, jumpBufT:0, _jumpHeldPrev:false,     // jump feel (Engine.move): coyote time + input buffer + variable height
     stamina:100, _sprintHold:0, _dblT:{}, _sprintKey:null,   // sprint meter (Engine.move)
+    _rage:0, _rageCD:0, _rageSeq:null, _rageReady:false,     // RAGE super meter + cinematic-combo state
     hold:null, grabCD:0, steal:null,                // grab-a-patron / slam-heads / throw-overboard / weapon-steal state
     stagger:0, hurt:0, dead:false, _sq:0,
     lockOn:null, r:0.34,
@@ -3405,6 +3430,13 @@ function resolveHit(A, isPlayer){
 }
 function addCombo(){ GAME.combo++; GAME.comboT=1.4; if(GAME.combo>GAME.maxCombo)GAME.maxCombo=GAME.combo;
   if(GAME.combo>=HEAT_ON && player){ if(!((player._heat||0)>0)) popWord({x:player.pos.x,y:2.5,z:player.pos.z},'🔥 HEAT!','#ff6a1e',26); player._heat=HEAT_DUR; }
+  // RAGE charge: every landed hit feeds the super meter -- faster while HEAT is lit,
+  // so a sustained assault fills it. Latches READY at full and announces itself once.
+  if(player && !player._rageSeq){ const was=player._rage||0;
+    player._rage=Math.min(100, was + (((player._heat||0)>0)?11:7));
+    if(player._rage>=100 && was<100){ player._rageReady=true;
+      popWord({x:player.pos.x,y:2.9,z:player.pos.z},'⚡ RAGE READY','#ffd23d',30);
+      if(AC) sfx.heavy(0.7); haptic(0.85,0.7,180); } }
   const c=document.getElementById('combo'); const n=document.getElementById('comboN');
   if(GAME.combo>=2){ c.classList.add('on'); n.textContent=GAME.combo;
     n.animate([{transform:'scale(1.4)'},{transform:'scale(1)'}],{duration:180}); } }
@@ -3516,6 +3548,8 @@ function updatePlayer(dt, pad, actor){
     document.getElementById('combo').classList.remove('on'); } }
   P.weaveCD=Math.max(0,P.weaveCD-dt); P.dodgeCD=Math.max(0,P.dodgeCD-dt); P.chainT=Math.max(0,P.chainT-dt); P.tackleCD=Math.max(0,P.tackleCD-dt); P.jumpCD=Math.max(0,P.jumpCD-dt); P.slamHit=Math.max(0,P.slamHit-dt); P.grabCD=Math.max(0,P.grabCD-dt);
   P._heat=Math.max(0,(P._heat||0)-dt); P._tornadoCD=Math.max(0,(P._tornadoCD||0)-dt);   // HEAT window + tornado cooldown
+  P._rageCD=Math.max(0,(P._rageCD||0)-dt);                                               // RAGE re-trigger lockout
+  if(!P._rageSeq && (P._rage||0)<100 && GAME.comboT<=0) P._rage=Math.max(0,(P._rage||0)-dt*6);   // meter bleeds out of combat (never once it's full/READY)
   if((P._heat||0)>0 && (P._steamT=(P._steamT||0)-dt)<=0){ P._steamT=0.14; const sp=P.pos.clone(); sp.y=1.6+Math.random()*0.5; burst(sp,2,0xffe6c0,0.35); }   // sizzle steam
   // buffered-attack lifetime + combo-target upkeep (see beginSwing / the attack integrate)
   P.bufferT=Math.max(0,(P.bufferT||0)-dt); if(P.bufferT<=0) P.bufferedHeavy=null;
@@ -3525,6 +3559,15 @@ function updatePlayer(dt, pad, actor){
   P.iframe=Math.max(0,P.iframe-dt); P.stagger=Math.max(0,P.stagger-dt); P.hurt=damp(P.hurt,0,8,dt);
 
   updateCameraVectors();
+
+  // ===== RAGE MODE — the Valley-of-the-End combo. While a sequence runs it OWNS
+  // the body (drives its own dash/flurry/launch and skips normal control); a full
+  // meter + a press (R key / the RAGE button) kicks it off on the nearest foe.
+  if(P._rageSeq){ tickRage(P,dt); poseChef(P,true,dt); return; }
+  if(!REMOTE && GAME.mode==='play' && !COOKING && (P._rage||0)>=100 && (P._rageCD||0)<=0
+     && !P.hold && !P.grabbed && !P.steal && !P.dead && (consume('rageEdge')||tapK('r'))){
+    if(startRage(P)){ tickRage(P,dt); poseChef(P,true,dt); return; }
+  }
 
   // ----- read input -----
   let ix=0,iz=0;
@@ -4047,6 +4090,7 @@ function updateEnemy(e, dt){
     // clean glide, not a velocity spike; gravity (in ragStep) still arcs it down.
     if(e._overboard && e.rag){ const d=e._overboard, s=8.5*dt;
       for(const kk in e.rag.pts){ const pt=e.rag.pts[kk]; pt.p.x+=d.x*s; pt.p.z+=d.z*s; pt.o.x+=d.x*s; pt.o.z+=d.z*s; } }
+    if(e._splash){ e._splash.t-=dt; if(e._splash.t<=0){ waterSplash(e._splash.x+e._splash.dx*4.6, e._splash.z+e._splash.dz*4.6); e._splash=null; } }   // hits the bay -> water burst
     e.chef.position.copy(e.pos); e.chef.rotation.y=e.facing;   // frame for world<->local
     if(e.deadT<1.6) updateDead(e, dt);
     if(e.deadT>1.6){ const s=clamp(1-(e.deadT-1.6)/0.7,0,1); e.chef.scale.setScalar(s*(e.kind==='tough'?1.12:1)); }
@@ -6345,6 +6389,151 @@ function kitchenTornado(P){
   if(AC){ sfx.heavy(1); } haptic(0.95,0.85,240);
   popWord({x:P.pos.x,y:2.3,z:P.pos.z}, hot?'🔥 KITCHEN TORNADO!':'KITCHEN TORNADO!', '#ff6a1e', 30);
   return true;
+}
+/* ==================== RAGE MODE — the Valley-of-the-End combo ================
+   Earned by sustained aggression (addCombo feeds the meter, faster while HEAT is
+   lit). One press spends the whole bar on a scripted brawl beat straight off the
+   Naruto-vs-Sasuke reference: a STANDOFF freeze, an explosive DASH-IN, a
+   machine-gun PUNCH FLURRY, then a single LAUNCH that yeets the victim clear
+   across the deck and 86's them over the rail into the bay with a WATER BURST.
+   Runs as a self-contained state machine in P._rageSeq, ticked by tickRage while
+   updatePlayer hands it the body. Bosses go over the rail too -- but only on the
+   killing blow: chip the landlord down, then a rage finish sails him off his own
+   terrace; a non-lethal one hits huge and shoves him toward the edge instead. */
+const RAGE_HITS=7;              // punches in the flurry
+const RAGE_FLURRY_IV=0.085;    // seconds between flurry punches (machine-gun cadence)
+function rageTarget(P){
+  let t=(P.lockOn&&!P.lockOn.dead)?P.lockOn:null;
+  if(!t){ let bd=1e9; for(const e of enemies){ if(e.dead||e._remove) continue;
+    const d=Math.hypot(e.pos.x-P.pos.x,e.pos.z-P.pos.z); if(d<bd){ bd=d; t=e; } } }
+  return t;
+}
+function startRage(P){
+  const tgt=rageTarget(P); if(!tgt) return false;          // nobody to rage on -> keep the meter, keep the button lit
+  P._rage=0; P._rageReady=false;
+  P.attack=null; P.hold=null; P.slam=null; P.dodge=null; P.tackle=null; P.bufferedHeavy=null;
+  P.iframe=Math.max(P.iframe,2.4);                          // untouchable through the whole cinematic
+  const ang=Math.atan2(tgt.pos.x-P.pos.x, tgt.pos.z-P.pos.z);
+  P.facing=ang; P.comboTarget=tgt; P.lockOn=tgt;
+  P._rageSeq={ ph:'wind', t:0, tgt, ang, hits:0, pt:0, dx:Math.sin(ang), dz:Math.cos(ang), gap:0, x0:P.pos.x, z0:P.pos.z };
+  // STANDOFF punch-in: a brief slow-mo kiss + zoom + a flash; both fighters lit.
+  // Kept short so it clears BEFORE the dash -- the rush should read explosive, not
+  // wade through mud (the big slow-mo is saved for the launch payoff).
+  FX.slowT=Math.max(FX.slowT,0.25); hitstop(0.1);
+  POST.uniforms.uZoom.value=Math.max(POST.uniforms.uZoom.value,0.16);
+  shake(0.5); hitPost(0.9,0xff6a1e); haptic(1,0.9,260);
+  popWord({x:P.pos.x,y:3.0,z:P.pos.z},'⚡ RAGE MODE','#ffd23d',40);
+  if(AC){ sfx.heavy(1); tone(90,300,0.5,'sawtooth',0.12); }
+  return true;
+}
+function tickRage(P,dt){
+  const S=P._rageSeq; if(!S) return;
+  const tgt=S.tgt, alive = tgt && !tgt._remove;
+  S.t+=dt;
+  P.vel.set(0,0,0); P.iframe=Math.max(P.iframe,0.4);
+  // stay squared up on the victim and pin it in place so every beat lands clean
+  if(alive){ S.ang=Math.atan2(tgt.pos.x-P.pos.x, tgt.pos.z-P.pos.z);
+    if(!tgt.dead){ tgt.stagger=Math.max(tgt.stagger,0.45); tgt.vel.x*=0.4; tgt.vel.z*=0.4; } }
+  P.facing=angLerp(P.facing,S.ang,Math.min(1,dt*18));
+
+  if(S.ph==='wind'){
+    if(S.t>=0.32){
+      if(!alive){ S.ph='recover'; S.t=0; return; }
+      const d=Math.hypot(tgt.pos.x-P.pos.x,tgt.pos.z-P.pos.z);
+      S.dx=Math.sin(S.ang); S.dz=Math.cos(S.ang); S.gap=Math.max(0,d-1.15); S.x0=P.pos.x; S.z0=P.pos.z;
+      S.ph='dash'; S.t=0;
+    }
+    return;
+  }
+  if(S.ph==='dash'){
+    const k=clamp(S.t/0.16,0,1), e=1-(1-k)*(1-k);          // ease-out rush
+    P.pos.x=S.x0+S.dx*S.gap*e; P.pos.z=S.z0+S.dz*S.gap*e;
+    P.speed=9; P.movePhase+=dt*22;                         // run clip plays while closing
+    if(S.gap>2 && (S._trailT=(S._trailT||0)-dt)<=0){ S._trailT=0.02; const tp=P.pos.clone(); tp.y=1.1; burst(tp,2,0xffb060,0.5); }
+    if(S.t>=0.16){ S.ph='flurry'; S.t=0; S.hits=0; S.pt=0; P.attack=null; }
+    return;
+  }
+  if(S.ph==='flurry'){
+    S.pt-=dt;
+    if(P.attack){ P.attack.t+=dt;
+      if(!P.attack.hit && P.attack.t>=P.attack.hitAt){ P.attack.hit=true; rageFlurryHit(P,tgt); }
+      if(P.attack.t>=P.attack.dur) P.attack=null;
+    }
+    if(!P.attack && S.hits<RAGE_HITS && S.pt<=0){          // fire the next punch: a fresh P.attack animates a new clip
+      S.pt=RAGE_FLURRY_IV; P.comboStep=S.hits;
+      P.attack={ wpn:'fists', heavy:false, t:0, wind:0.02, active:0.05, rec:0.02, dur:0.09,
+        hitAt:0.02, hit:false, side:(S.hits%2===0)?1:-1, shape:PUNCHES[S.hits%PUNCHES.length], target:tgt, aim:S.ang };
+      S.hits++;
+    }
+    if(S.hits>=RAGE_HITS && !P.attack){ S.ph='launch'; S.t=0; }
+    return;
+  }
+  if(S.ph==='launch'){ rageLaunch(P,tgt,S.ang); S.ph='recover'; S.t=0; return; }
+  if(S.ph==='recover'){
+    if(S.t>=0.45){ P._rageSeq=null; P.attack=null; P._rageCD=0.6;
+      P.lockOn=(tgt&&!tgt.dead&&!tgt._remove)?tgt:null; }
+    return;
+  }
+}
+function rageFlurryHit(P,tgt){
+  const S=P._rageSeq, ang=S?S.ang:P.facing;
+  const cp = (tgt&&!tgt.dead) ? (function(){ const p=tgt.pos.clone(); p.y=1.35; return p; })()
+                              : new V3(P.pos.x+Math.sin(ang)*1.1,1.35,P.pos.z+Math.cos(ang)*1.1);
+  burst(cp, 7, 0xffe6a0, 1.0); ring(cp, 0xffffff, 1.0);
+  camKick(ang + ((S&&S.hits%2)?0.5:-0.5), 0.22); shake(0.16); if(tgt&&!tgt.dead) hitstop(0.03,tgt);   // LOCAL hitlag on the victim only -- don't freeze the room (or the sequence) 7x
+  if(AC){ drum('tom',0.5,0.9+Math.random()*0.14); if((S&&S.hits%2)===0) sfx.thud(0.5); }
+  haptic(0.5,0.4,40); GAME.hitsLanded++;
+  if(tgt && !tgt.dead){
+    tgt.hp-=9; tgt.hurt=1; tgt.stagger=Math.max(tgt.stagger,0.5);
+    tgt.vel.x-=Math.sin(ang)*0.6; tgt.vel.z-=Math.cos(ang)*0.6;   // rock them; the launch is what sends them
+    const dh=tgt.chef&&tgt.chef.userData&&tgt.chef.userData.dHead;
+    if(dh){ dh.t=Math.max(dh.t,0.5*dh.max); dh.p.set(-Math.sin(ang)*0.2,0,-Math.cos(ang)*0.2); dh.n.set(Math.sin(ang),0,Math.cos(ang)); }
+    addCombo();                                                    // the flurry racks the combo counter (rage-charge is skipped mid-sequence)
+    if(tgt.hp<=0) tgt.hp=1;                                        // keep them alive to the finish -- the launch is the exit
+  }
+}
+function rageLaunch(P,tgt,ang){
+  // THE FINISH — one launch across the deck and over the rail into the bay
+  FX.slowT=Math.max(FX.slowT,0.4); hitstop(0.22); shake(1.1);
+  POST.uniforms.uZoom.value=Math.max(POST.uniforms.uZoom.value,0.2);
+  impactFrames(5,0xffffff,0x140c07); hitPost(1,0xffd23d); haptic(1,0.95,300);
+  const cp=(tgt&&!tgt.dead)?tgt.pos.clone():P.pos.clone(); cp.y=1.3;
+  burst(cp,30,0xffb060,2.6); burst(cp,16,0xffffff,2.0); ring(cp,0xffffff,2.6); ring(cp,COL.flame,1.8);
+  if(AC){ sfx.heavy(1); drum('kick',1,0.9); }
+  popWord({x:cp.x,y:2.4,z:cp.z},"⚡ 86'D!",'#ffd23d',46);
+  if(!tgt || tgt.dead || tgt._remove) return;
+  // BOSSES aren't exempt from the swim: a rage finish sends the landlord off his
+  // own terrace -- but only as the KILL. Chip him down first; a rage that lands the
+  // finishing blow yeets him over the rail (splash + all), while a non-lethal one
+  // still hits huge and hurls him toward the edge without ending the fight early.
+  if(tgt.boss){ tgt.hp-=140;
+    if(tgt.hp>0){                                           // survived -> massive stagger + a shove at the rail, stays in the fight
+      tgt.stagger=Math.max(tgt.stagger,1.3); tgt.hurt=1;
+      tgt.vel.x=Math.sin(ang)*14; tgt.vel.z=Math.cos(ang)*14; shake(0.6);
+      return;
+    }
+    tgt.hp=0;                                               // lethal -> fall through to the overboard sail below (killChef drives the death)
+  }
+  tgt._overboard={ x:Math.sin(ang), z:Math.cos(ang) }; tgt.pos.y=P.pos.y;   // sail flag: skips the arena clamp (see updateEnemy / resolveBodies)
+  tgt.vel.x=Math.sin(ang)*22; tgt.vel.z=Math.cos(ang)*22;
+  killChef(tgt, ang);
+  if(tgt.rag){ const d=tgt._overboard;                      // launch pop: up-and-out so the arc reads before the per-frame sail carries them out
+    for(const kk in tgt.rag.pts){ const pt=tgt.rag.pts[kk]; pt.o.x-=d.x*0.2; pt.o.z-=d.z*0.2; pt.o.y-=0.14; } }
+  tgt._splash={ t:0.5, x:tgt.pos.x, z:tgt.pos.z, dx:Math.sin(ang), dz:Math.cos(ang) };   // fire the water burst when they hit the bay
+}
+/* water burst as an 86'd body hits the bay (also used by any overboard toss). The
+   spark pool floor-bounces at y=0.05, so these droplets fly with a no-floor flag. */
+function waterSplash(x,z){
+  splashParticles(x,-1.6,z);
+  if(AC){ noise(0.5,0.3,1100,0.7); sfx.thud(0.35); }
+}
+function splashParticles(x,y,z){
+  for(let i=0;i<30;i++){ const s=SPARKS.find(s=>s.life<=0); if(!s)break;
+    s.m.visible=true; s.m.position.set(x+rand(-0.3,0.3),y,z+rand(-0.3,0.3));
+    const col=(i%3===0)?0xffffff:0x8fe3ff; s.m.material.color.setHex(col); s.m.material.emissive.setHex(col);
+    const a=Math.random()*TAU, up=rand(3,7), sp=rand(1,3.5);
+    s.v.set(Math.cos(a)*sp, up, Math.sin(a)*sp); s.life=s.max=rand(0.35,0.7);
+    s.nofloor=true; s.m.scale.setScalar(rand(0.5,1.2)); }
 }
 function tickThrown(dt){
   for(let i=THROWN.length-1;i>=0;i--){
@@ -9107,6 +9296,13 @@ function tick(){
   // STAMINA meter (sprint, Engine.move) -- cheap style update; hidden with #plate
   { const stamEl=document.getElementById('stamfill');
     if(stamEl && player) stamEl.style.transform='scaleX('+clamp((player.stamina||0)/100,0,1).toFixed(3)+')'; }
+  // RAGE meter + super button -- fill, glow at full, reveal the button when ready
+  { const rf=document.getElementById('ragefill'), rw=document.getElementById('ragewrap'), rb=document.getElementById('bRage');
+    const rv=player?clamp((player._rage||0)/100,0,1):0;
+    if(rf) rf.style.transform='scaleX('+rv.toFixed(3)+')';
+    const ready = rv>=1 && player && !player._rageSeq && GAME.mode==='play';
+    if(rw) rw.classList.toggle('ready', ready);
+    if(rb) rb.classList.toggle('on', ready); }
   // DRUNK VISION: drive the CSS overlay -- blur + colour-shift the world, wash a
   // shifting tint, darken the edges. Scales with player._drunk; HUD stays crisp.
   { const d=player?(player._drunk||0):0;
