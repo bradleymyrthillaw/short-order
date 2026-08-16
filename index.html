@@ -3117,7 +3117,7 @@ function resolveBodies(){
   // living actors PLUS fresh corpses (still full-size, before the shrink) so you
   // can't walk through a body that just dropped in front of you
   const live=[player];
-  for(const e of enemies){ if(e.state==='held' || e._overboard) continue;   // driven by the player / sailing off the deck -- don't shove
+  for(const e of enemies){ if(e.state==='held' || e._overboard || e._thrown) continue;   // held / sailing off / mid-bowling-slide: drive their own motion, don't soft-shove them
     if(!e.dead || e.deadT<1.6) live.push(e); }
   for(let iter=0; iter<2; iter++){
     for(let i=0;i<live.length;i++) for(let j=i+1;j<live.length;j++){
@@ -3387,7 +3387,7 @@ function resolveHit(A, isPlayer){
     // into a strike in a room full of bodies. A killing finisher ragdolls instead.
     if(finisher && !blocked && !boss && T.hp>0){
       T.vel.x=Math.sin(ang)*15; T.vel.z=Math.cos(ang)*15;
-      T._thrown={t:0.45, ang}; T._thrownHit=null; T.stagger=Math.max(T.stagger,0.8);
+      T._thrown={t:0.55, ang}; T._thrownHit=null; T.stagger=Math.max(T.stagger,0.8);
       ring(cpos,0xffffff,1.9);
     }
     if(isPlayer){ if(T.hp<=0){ killChef(T, ang); } }
@@ -3961,7 +3961,7 @@ function coopPartner(P){ return (P===player)?(window.player2||null):(P===window.
 // PARTNER TOSS (TMNT's most-loved dumb move): grab your co-op partner and hurl
 // them as a living missile -- they get i-frames on the way and a slam on landing.
 function tossPartner(thrower, mate){
-  if(!mate || mate.dead || mate.grabbed || (mate._tossed||0)>0 || mate.hold || mate.steal) return false;
+  if(!mate || mate.dead || mate.grabbed || (mate._tossed||0)>0 || mate.hold || mate.steal || (mate.stagger||0)>0 || (mate.down||0)>0) return false;   // don't yeet a reeling/prone partner
   const ang=thrower.facing;
   mate._tossed=0.7; mate._tvx=Math.sin(ang)*11; mate._tvz=Math.cos(ang)*11; mate._tvy=7;
   mate.attack=null; mate.dodge=null; mate.tackle=null; mate.iframe=Math.max(mate.iframe,0.9);
@@ -3977,7 +3977,9 @@ function updateTossedPlayer(P,dt){
   P.facing+=dt*18;                                   // tumble
   collide(P.pos,P.r);
   const rest=restY(P.pos.x,P.pos.z,P.pos.y,P.r);
-  if(P.pos.y<=rest || P._tossed<=0){ P.pos.y=rest; P._tossed=0; P.vy=0; partnerSlam(P); }
+  if(P.pos.y<=rest || P._tossed<=0){ P.pos.y=rest; P._tossed=0; P.vy=0;
+    P.iframe=Math.max(P.iframe,0.5); P.grabCD=Math.max(P.grabCD,0.6);   // landing recovery: a survivor just outside the slam can't punish the touchdown
+    partnerSlam(P); }
 }
 function partnerSlam(P){
   const R=2.8, cp=P.pos.clone(); cp.y=0.1;
@@ -4059,16 +4061,19 @@ function updateEnemy(e, dt){
   // here and return early so the stagger branch doesn't kill the momentum.
   if(e._thrown){ e._thrown.t-=dt;
     if(e._thrown.t>0){
-      e.vel.multiplyScalar(Math.exp(-1.7*dt));                    // carries across the deck
-      const bx=e.pos.x, bz=e.pos.z;
-      e.pos.addScaledVector(e.vel,dt); collide(e.pos,e.r);
+      e.vel.multiplyScalar(Math.exp(-1.3*dt));                    // carries across the deck (looser drag so it can bowl a couple bodies)
+      e.pos.addScaledVector(e.vel,dt);
+      const wx=e.pos.x, wz=e.pos.z;                               // where the slide WANTED to land
+      collide(e.pos,e.r);                                        // ...then clamped off any wall/prop
       const sp=Math.hypot(e.vel.x,e.vel.z);
       const a2=e._thrown.ang;
-      // WALL SPLAT: collide() shoved us back off a wall/prop while we were moving
-      // fast -- bounce off it, bonus damage, and down they go.
-      if(sp>7 && (Math.abs(e.pos.x-bx)>0.03 || Math.abs(e.pos.z-bz)>0.03)){
+      // WALL SPLAT: collide() shoved us back off a wall/prop this frame while fast.
+      // (Compare post-collide vs the INTENDED post-move spot -- comparing against the
+      // PRE-move spot made every fast body "splat" on frame 1 in open floor, which
+      // is why body-bowling almost never ran.)
+      if(sp>7 && (Math.abs(e.pos.x-wx)>0.03 || Math.abs(e.pos.z-wz)>0.03)){
         e.hp-=14; const cp=e.pos.clone(); cp.y=1.2;
-        burst(cp,16,0xffb060,1.5); ring(cp,COL.flame,1.4); shake(0.55); if(AC) sfx.thud(0.85); camKick(a2+Math.PI,0.45);
+        burst(cp,16,0xffb060,1.5); ring(cp,COL.flame,1.4); shake(0.55); hitstop(clamp(sp/16,0.4,1)*0.12, e); impactFrames(3,0xff8a3a,0x140c07); if(AC) sfx.thud(0.85); camKick(a2+Math.PI,0.45);
         e.vel.x*=-0.35; e.vel.z*=-0.35;
         popWord(cp,'SPLAT!','#ff8a3a',26);
         if(e.hp<=0) killChef(e,a2); else knockDown(e,a2+Math.PI,1.1);
@@ -6172,16 +6177,21 @@ function updateHold(P,dt){
   e.pos.x=P.pos.x+fx*(P.r+e.r+0.15);                           // pinned out in front, matching height
   e.pos.z=P.pos.z+fz*(P.r+e.r+0.15);
   e.pos.y=P.pos.y;
+  collide(e.pos,e.r);                                         // keep the pinned hostage out of walls/props (they were clipping through geometry)
   e.vel.set(0,0,0); e.vy=0;
   e.facing=P.facing+Math.PI;                                   // they face back at you
   e.state='held'; e.stateT=99; e.stagger=Math.max(e.stagger,0.2);
-  // light contextual telegraph: call out the aim only when it CHANGES (no pool spam)
-  const ctx=throwContext(P);
+  // contextual telegraph: call out the aim when it CHANGES (no pool spam). LATCH it
+  // so throwHeld executes the mode the player was shown, not a one-frame-later recompute.
+  const ctx=throwContext(P); H.ctx=ctx;
   if(ctx.mode!==H.mode){ H.mode=ctx.mode;
     const lbl=ctx.mode==='overboard'?'OVERBOARD':ctx.mode==='slam'?'SLAM':'THROW';
     const col=ctx.mode==='overboard'?'#5fd0ff':ctx.mode==='slam'?'#ff6a1e':'#f4e4c1';
     popWord({x:P.pos.x,y:2.2,z:P.pos.z}, lbl, col, 20); }
-  if(H.t>=GRAB_HOLD_MAX) throwHeld(P);                         // can't carry a hostage forever
+  // LOSING GRIP warning before the auto-throw so it never feels like a fumble
+  if(GRAB_HOLD_MAX-H.t < 0.55 && !H._warn){ H._warn=true;
+    haptic(0.5,0.4,90); if(AC) sfx.step(); popWord({x:P.pos.x,y:2.5,z:P.pos.z},'LOSING GRIP!','#ffd23d',22); }
+  if(H.t>=GRAB_HOLD_MAX){ H.ctx={ mode:'throw', x:P.pos.x+fx*THROW_RANGE, z:P.pos.z+fz*THROW_RANGE, ang:P.facing }; throwHeld(P); }   // TIMEOUT auto-throw is a SAFE floor bowl -- never an unaimed instant-kill overboard
 }
 function throwContext(P){
   // scan forward: whichever comes first -- the terrace edge (OVERBOARD) or a prop
@@ -6250,10 +6260,13 @@ function throwWeapon(P){
   if(P.attack||P.wpn==='fists') return;
   const key=P.wpn, w=WEAPONS[key]; if(!w||w.ranged||key==='plate') return;
   const wg=P.chef.userData.weaponGroup;
-  const mesh=wg||makeWeaponMesh(key);
   const dmg=Math.round((w.heavy||10)*1.6);          // a thrown weapon HURTS
-  launchThrow(P.pos.x, P.pos.y+1.05, P.pos.z, P.facing, 15, mesh, dmg, 26, null, key);
+  // Re-equip fists FIRST: equip() removes the OLD weaponGroup from its parent, so
+  // if we launch (scene.add) it and THEN equip, equip yanks the flying mesh right
+  // back out of the scene -- the weapon flew invisibly and landed as a ghost pickup.
   P.wpn='fists'; P.dur=Infinity; equip(P.chef,'fists'); updateHUDWeapon();
+  const mesh=wg||makeWeaponMesh(key); mesh.rotation.set(0,0,0); mesh.scale.setScalar(1);
+  launchThrow(P.pos.x, P.pos.y+1.05, P.pos.z, P.facing, 15, mesh, dmg, 26, null, key);
   P.iframe=Math.max(P.iframe,0.18);
   shake(0.3); camKick(P.facing,0.35); if(AC) sfx.thud(0.6); haptic(0.5,0.5,90);
   const hp=P.pos.clone(); hp.y=1.5; popWord(hp, w.name.toUpperCase()+' THROW!', '#ffe03d', 22);
@@ -6289,6 +6302,7 @@ function kitchenTornado(P){
 function tickThrown(dt){
   for(let i=THROWN.length-1;i>=0;i--){
     const t=THROWN[i]; t.t+=dt; t.vy-=14*dt; t.x+=t.vx*dt; t.z+=t.vz*dt; t.y+=t.vy*dt;
+    if(t.t>4.5){ if(t.g) scene.remove(t.g); THROWN.splice(i,1); continue; }   // TTL: a whiffed throw can't live forever (mesh leak)
     if(t.g && t.g.position) t.g.position.set(t.x,t.y,t.z);
     if(t.spin) t.g.rotation.z+=t.spin*dt; if(t.g.rotation) t.g.rotation.y+=dt*6;
     // HOSTILE plate (a waiter's throw): hunts the PLAYER, not the crowd
@@ -6325,6 +6339,8 @@ function tickThrown(dt){
       }
     }
     if(t.y<=0.05 && t.t>0.08){ t.y=0;
+      // off-deck landing shatters instead of leaving an unreachable ghost pickup
+      if(Math.abs(t.x)>HALFW-0.4 || Math.abs(t.z)>HALFD-0.4){ if(t.g) scene.remove(t.g); THROWN.splice(i,1); continue; }
       // land as a pickup (re-throwable / retrievable in the day via its carry data)
       PICKUPS.push({ g:t.g, key:t.key||'plate', x:t.x, z:t.z, disc:t.g, taken:false, y0:0, carry:t.carry });
       THROWN.splice(i,1);
@@ -6418,12 +6434,11 @@ function throwDayCarry(P){
 function throwNightPlate(P){
   if(P.wpn!=='plate' || P.attack) return;
   const wg=P.chef.userData.weaponGroup;
-  const mesh = wg ? wg : makePlateMesh();
-  const spd=11;
-  launchThrow(P.pos.x, P.pos.y+1.0, P.pos.z, P.facing, spd, mesh, 12, 20);
-  P.wpn='fists'; P.dur=Infinity;
-  // re-equip a fists group so the hand isn't empty-holding a ghost
-  equip(P.chef,'fists');
+  // re-equip fists BEFORE launching (see throwWeapon: equip() would otherwise pull
+  // the just-added mesh back out of the scene and the frisbee would fly invisibly)
+  P.wpn='fists'; P.dur=Infinity; equip(P.chef,'fists');
+  const mesh = wg || makePlateMesh(); mesh.rotation.set(0,0,0); mesh.scale.setScalar(1.2);
+  launchThrow(P.pos.x, P.pos.y+1.0, P.pos.z, P.facing, 11, mesh, 12, 20);
   P.iframe=Math.max(P.iframe,0.2);
   if(AC) sfx.pickup(0.9);
   toast('FRISBEE!');
@@ -6441,7 +6456,7 @@ function throwHeld(P){
   const H=P.hold; if(!H) return; const e=H.e;
   P.hold=null; P.grabCD=0.55; P.iframe=Math.max(P.iframe,0.35);   // i-frames persist through the toss
   if(!e || e.dead) return;
-  const ctx=throwContext(P), ang=P.facing, cp=e.pos.clone(); cp.y=1.3;
+  const ctx=H.ctx||throwContext(P), ang=ctx.ang!=null?ctx.ang:P.facing, cp=e.pos.clone(); cp.y=1.3;   // use the LATCHED context so the outcome matches the telegraph the player saw
   if(ctx.mode==='overboard'){
     // 86'D: sail off the deck into the bay. The ragdoll is flagged to skip the
     // arena clamp (see ragStep / resolveBodies) so it can actually leave.
@@ -6470,7 +6485,7 @@ function throwHeld(P){
     // open-floor THROW: bowl them into the crowd (knockback + stagger), not lethal by itself
     e.stagger=1.0; e.state='engage'; e.stateT=0.2;
     e.vel.x=Math.sin(ang)*16; e.vel.z=Math.cos(ang)*16;
-    e._thrown={ t:0.5, ang };                                   // damages others en route (see updateEnemy)
+    e._thrown={ t:0.65, ang };                                  // longer slide + looser drag -> bowls a couple bodies before stopping
     hitstop(0.12); shake(0.5); impactFrames(3,0xffe03d,0x140c07);
     burst(cp,12,0xffe03d,1.2); if(AC) sfx.thud(0.7); haptic(0.7,0.6,150);
     applyImpact(e, ang, 1.5); popWord(cp,'TOSSED!','#ffe03d',30);
@@ -6485,10 +6500,13 @@ function handleGrab(P,dt,pad){
   if(!e || e.dead){ P.grabbed=null; hideMashUI(); return; }
   Gr.t+=dt; Gr.dmgT-=dt;
   let m=0;
-  if(consume('lightEdge')) m++; if(consume('heavyEdge')) m++; if(consume('dodgeEdge')) m++;
-  if(tapK('j')) m++; if(tapK('k')) m++; if(tapK('shift')) m++;
+  // passive drain toward freedom so mashing is the ACCELERATOR, not the only path --
+  // a player who can't mash fast still breaks out around the slam cap (fair on touch)
+  Gr.mash += Gr.need*0.14*dt;
+  if(consume('lightEdge')) m++; if(consume('heavyEdge')) m++; if(consume('dodgeEdge')) m++; if(consume('pickupEdge')) m++;
+  if(tapK('j')) m++; if(tapK('k')) m++; if(tapK('shift')) m++; if(tapK('f')) m++; if(tapK(' ')) m++;   // F + jump count too (matches updateSteal; a keyboard player mashes F to escape)
   if(MOUSE.l){ m++; MOUSE.l=false; } if(MOUSE.r){ m++; MOUSE.r=false; }
-  if(TOUCH.lightEdge){ m++; TOUCH.lightEdge=false; } if(TOUCH.heavyEdge){ m++; TOUCH.heavyEdge=false; } if(TOUCH.dodgeEdge){ m++; TOUCH.dodgeEdge=false; }
+  // (TOUCH.*Edge already consumed above via consume(); no second read)
   // pollPad() exposes edge-triggered face buttons as pad.light/heavy/grab/pickup
   // (already press-only via tap()), NOT pad.*Edge -- those *Edge names only exist
   // on TOUCH. Reading pad.lightEdge here meant the whole grapple mash did nothing
@@ -6507,7 +6525,7 @@ function handleGrab(P,dt,pad){
   const k=Math.min(1,dt*7); P.pos.x += dx*(1-0.95/d)*k; P.pos.z += dz*(1-0.95/d)*k; P.vel.set(0,0,0);
   mashUI(Gr);
   if(Gr.mash>=Gr.need){                        // broke free
-    P.grabbed=null; hideMashUI(); P.iframe=0.6;
+    P.grabbed=null; hideMashUI(); P.iframe=0.6; grabCD=Math.max(grabCD,0.8);   // brief grace so a second enemy can't instantly re-grab
     e.stagger=0.7; e.state='recover'; e.stateT=0.6; e.vel.set(-dx/d*7,0,-dz/d*7);
     shake(0.5); sfx.block(); haptic(0.4,0.5,80);
     const hp=P.pos.clone(); hp.y=1.5; popWord(hp,'BROKE FREE!','#7dd6c0',30); burst(hp,12,0x9be6d0,1.1);
@@ -6515,7 +6533,7 @@ function handleGrab(P,dt,pad){
   }
   if(Gr.t>=Gr.max){                            // slammed
     P.hp-=(e.kind==='tough'?12:8); P.grabbed=null; hideMashUI();
-    P.stagger=0.5; P.iframe=0.3; P.vel.set(-dx/d*9,0,-dz/d*9);
+    P.stagger=0.5; P.iframe=0.6; grabCD=Math.max(grabCD,1.4); P.vel.set(-dx/d*9,0,-dz/d*9);   // real recovery + regrab lock so a slam doesn't chain into another grab
     e.state='recover'; e.stateT=0.7;
     shake(1.2); impactFrames(3,0xff3b30,0x140c07); hitPost(0.85,0xff3b30); sfx.hurt(); haptic(1.0,0.85,320);
     const hp=P.pos.clone(); hp.y=1.4; popWord(hp,'SLAMMED','#ff3b30',34); updateHUDHealth();
