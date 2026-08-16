@@ -3363,6 +3363,15 @@ function resolveHit(A, isPlayer){
         haptic(0.55 + weight*0.45, 0.5 + weight*0.5, Math.round(110 + weight*380));
         kitchenBump(0.2 + weight*0.55); }
     }
+    // FINISHER LAUNCH: the 3rd-hit down-beat doesn't just shove -- it LAUNCHES a
+    // surviving victim skidding across the deck, bowling over whoever's in the way
+    // (body-bowling: see updateEnemy's _thrown branch). Turns the combo pay-off
+    // into a strike in a room full of bodies. A killing finisher ragdolls instead.
+    if(finisher && !blocked && !boss && T.hp>0){
+      T.vel.x=Math.sin(ang)*15; T.vel.z=Math.cos(ang)*15;
+      T._thrown={t:0.45, ang}; T._thrownHit=null; T.stagger=Math.max(T.stagger,0.8);
+      ring(cpos,0xffffff,1.9);
+    }
     if(isPlayer){ if(T.hp<=0){ killChef(T, ang); } }
     else { playerHurtFlash(taken); break; } // enemy hits the player once
   }
@@ -3606,8 +3615,12 @@ function updatePlayer(dt, pad, actor){
   else if(GAME.mode==='after'){ afterVerbs(P,pad,dt); }
   else if(GAME.mode==='plan'){ planVerbs(P,pad,dt); }
   if(!COOKING && !P.attack && !P.hold && atBar(P) && !grabTarget(P,GRAB_REACH,1.4) && (pad.pickupHeld||(!REMOTE&&(KEY['f']||TOUCH.pickupHeld)))) chugDrink(P);
-  // THROW: G / gamepad r1 -- a held plate becomes a spinning, damaging frisbee
-  if(!P.attack && (tapK('g')||(!REMOTE&&pad&&pad.camR))){ if(P.wpn==='plate'){ throwNightPlate(P); } }
+  // THROW: G / gamepad r1 -- a held plate becomes a spinning frisbee; any OTHER
+  // weapon is hurled as a heavy projectile (see throwWeapon). Guns keep firing.
+  if(!P.attack && (tapK('g')||(!REMOTE&&pad&&pad.camR))){
+    if(P.wpn==='plate') throwNightPlate(P);
+    else if(!COOKING && P.wpn!=='fists' && !WEAPONS[P.wpn].ranged) throwWeapon(P);
+  }
   if(!COOKING && !P.attack && (pad.pickup||pad.rush||(!REMOTE&&(tapK('f')||consume('pickupEdge'))))){   // no grab/throw/drop/pickup mid-swing
     let ax=mv.x, az=mv.z; const al=Math.hypot(ax,az);
     if(al>1e-3){ ax/=al; az/=al; } else { ax=Math.sin(P.facing); az=Math.cos(P.facing); }
@@ -3959,18 +3972,36 @@ function updateEnemy(e, dt){
   if(e._thrown){ e._thrown.t-=dt;
     if(e._thrown.t>0){
       e.vel.multiplyScalar(Math.exp(-1.7*dt));                    // carries across the deck
+      const bx=e.pos.x, bz=e.pos.z;
       e.pos.addScaledVector(e.vel,dt); collide(e.pos,e.r);
+      const sp=Math.hypot(e.vel.x,e.vel.z);
+      const a2=e._thrown.ang;
+      // WALL SPLAT: collide() shoved us back off a wall/prop while we were moving
+      // fast -- bounce off it, bonus damage, and down they go.
+      if(sp>7 && (Math.abs(e.pos.x-bx)>0.03 || Math.abs(e.pos.z-bz)>0.03)){
+        e.hp-=14; const cp=e.pos.clone(); cp.y=1.2;
+        burst(cp,16,0xffb060,1.5); ring(cp,COL.flame,1.4); shake(0.55); if(AC) sfx.thud(0.85); camKick(a2+Math.PI,0.45);
+        e.vel.x*=-0.35; e.vel.z*=-0.35;
+        popWord(cp,'SPLAT!','#ff8a3a',26);
+        if(e.hp<=0) killChef(e,a2); else knockDown(e,a2+Math.PI,1.1);
+        e._thrown=null; e._thrownHit=null;
+        syncEnemyMesh(e,dt,e.facing); return;
+      }
       e.stagger=Math.max(e.stagger,0.25);
-      for(const o of enemies){ if(o===e||o.dead||o._thrown||o.state==='held') continue;
+      // BODY BOWLING: plow THROUGH the crowd -- everyone the sliding body hits goes
+      // down too (each struck once). Chain reactions turn one launch into a strike.
+      if(!e._thrownHit) e._thrownHit=[];
+      for(const o of enemies){ if(o===e||o.dead||o._thrown||o.state==='held'||e._thrownHit.indexOf(o)>=0) continue;
         if(Math.hypot(o.pos.x-e.pos.x,o.pos.z-e.pos.z) < o.r+e.r+0.3){
+          e._thrownHit.push(o);
           o.hp-=12; o.stagger=Math.max(o.stagger,0.7);
-          const a2=e._thrown.ang; o.vel.x+=Math.sin(a2)*9; o.vel.z+=Math.cos(a2)*9;
+          o.vel.x+=Math.sin(a2)*7; o.vel.z+=Math.cos(a2)*7;
           const cp2=o.pos.clone(); cp2.y=1.3; burst(cp2,8,0xffe03d,1.0); if(AC) sfx.thud(0.5);
-          if(o.hp<=0) killChef(o,a2); else applyImpact(o,a2,1.4);
-          e._thrown.t=0; break;                                   // one solid strike, then tumble to a stop
+          if(o.hp<=0) killChef(o,a2); else knockDown(o,a2,1.0);   // bowled: they hit the deck
+          e.vel.multiplyScalar(0.78);                             // each body it plows shaves momentum
         } }
       syncEnemyMesh(e,dt,e.facing); return;
-    } else e._thrown=null;
+    } else { e._thrown=null; e._thrownHit=null; }
   }
 
   // KNOCKDOWN: shoved to the deck -- lie prone briefly, then get up. Overrides AI
@@ -5991,9 +6022,25 @@ function grabShove(P){
    plate; Night: a held 'plate' becomes a spinning frisbee that damages enemies
    on contact and lands as a re-throwable pickup. */
 const THROWN=[];
-function launchThrow(x,y,z,ang,spd,mesh,dmg,spin,carry){
+function launchThrow(x,y,z,ang,spd,mesh,dmg,spin,carry,key){
   scene.add(mesh); mesh.position.set(x,y,z);
-  THROWN.push({x,y,z,vy:3.4,vx:Math.sin(ang)*spd,vz:Math.cos(ang)*spd,g:mesh,t:0,spin:spin||0,dmg:dmg||0,ang,carry});
+  THROWN.push({x,y,z,vy:3.4,vx:Math.sin(ang)*spd,vz:Math.cos(ang)*spd,g:mesh,t:0,spin:spin||0,dmg:dmg||0,ang,carry,key});
+}
+// WEAPON THROW: hurl the weapon in your hand as a heavy projectile -- big damage,
+// knocks the first enemy down, then lands as a retrievable pickup (you're bare-
+// handed until you go get it: the churn loop keeps turning). Guns/plate excluded
+// (they have their own throw/fire). A staple beat-em-up verb: bound to G/R1.
+function throwWeapon(P){
+  if(P.attack||P.wpn==='fists') return;
+  const key=P.wpn, w=WEAPONS[key]; if(!w||w.ranged||key==='plate') return;
+  const wg=P.chef.userData.weaponGroup;
+  const mesh=wg||makeWeaponMesh(key);
+  const dmg=Math.round((w.heavy||10)*1.6);          // a thrown weapon HURTS
+  launchThrow(P.pos.x, P.pos.y+1.05, P.pos.z, P.facing, 15, mesh, dmg, 26, null, key);
+  P.wpn='fists'; P.dur=Infinity; equip(P.chef,'fists'); updateHUDWeapon();
+  P.iframe=Math.max(P.iframe,0.18);
+  shake(0.3); camKick(P.facing,0.35); if(AC) sfx.thud(0.6); haptic(0.5,0.5,90);
+  const hp=P.pos.clone(); hp.y=1.5; popWord(hp, w.name.toUpperCase()+' THROW!', '#ffe03d', 22);
 }
 function tickThrown(dt){
   for(let i=THROWN.length-1;i>=0;i--){
@@ -6007,12 +6054,13 @@ function tickThrown(dt){
         const dx=e.pos.x-t.x, dz=e.pos.z-t.z, r=(e.r||0.34)+0.6;
         if(dx*dx+dz*dz < r*r){ hit=e; break; } }
       if(hit){
-        hit.hp-=t.dmg; hit.stagger=Math.max(hit.stagger,0.45);
-        hit.vel.x+=Math.sin(t.ang)*4; hit.vel.z+=Math.cos(t.ang)*4;
-        if(AC) sfx.thud(0.8); shake(0.4); hitstop(0.05);
-        burst(t.g.position, 8, 0xffd23d, 0.7);
-        if(hit.hp<=0) killChef(hit);
-        // the frisbee bounces: it keeps flying a moment, then drops to a pickup
+        const heavyThrow=t.dmg>=14;                                   // a thrown WEAPON, not a plate/ingredient
+        hit.hp-=t.dmg; hit.stagger=Math.max(hit.stagger,heavyThrow?0.8:0.45);
+        hit.vel.x+=Math.sin(t.ang)*(heavyThrow?8:4); hit.vel.z+=Math.cos(t.ang)*(heavyThrow?8:4);
+        if(AC) sfx.thud(0.8); shake(heavyThrow?0.6:0.4); hitstop(0.05); camKick(t.ang,heavyThrow?0.4:0.2);
+        burst(t.g.position, heavyThrow?14:8, 0xffd23d, heavyThrow?1.2:0.7);
+        if(hit.hp<=0) killChef(hit, t.ang); else if(heavyThrow) knockDown(hit, t.ang, 1.1);
+        // the projectile bounces: keeps flying a moment, then drops to a pickup
         t.dmg=0; t.vy=1.5;
         continue;
       }
