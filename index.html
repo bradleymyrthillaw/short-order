@@ -3186,7 +3186,7 @@ function resolveHit(A, isPlayer){
   const arc = w.thrust?0.5:0.95;
   const swArc = w.thrust?0.35:0.8;                    // blade's angular sweep across the active window
   const back = 0.05;                                  // seconds of attacker travel the sweep reaches back over (anti-tunnel)
-  const swingSpeed = clamp(0.14/((A.attack.wind)||0.14), 0.7, 1.5);   // faster wind-up = faster blade
+  const swingSpeed = clamp(0.14/((w.wind)||0.14), 0.7, 1.5);   // faster wind-up = faster blade (BASE wind: A.attack.wind carries ATK_SWING_MUL, which floored this to 0.7 for every weapon)
   const into = Math.max(0, avx*Math.sin(facing) + avz*Math.cos(facing));  // closing speed along the strike line
   const movingIntoHit = clamp(into/6, 0, 1);
   const Emul = clamp(swingSpeed*(1 + movingIntoHit*0.6), 0.7, 1.9);   // energy multiplier (~1 stationary, up to ~1.9 running in)
@@ -3281,8 +3281,8 @@ function resolveHit(A, isPlayer){
     burst(cpos, Math.round(((blocked?6:11) + weight*30)*bw + 2), col, (0.9 + weight*2.4)*bw);
     ring(cpos, w.metal?COL.cream:COL.flame, (1.0 + weight*1.7)*bw);
     if(weight>0.55 && !blocked){ ring(cpos, 0xffffff, 1.5+weight); burst(cpos, 8, 0xffffff, 1.6+weight); }
-    shake((0.28 + weight*2.0) * bw);   // chunkier -- hits have to LAND
-    hitstop((0.06 + weight*0.28) * (blocked?0.5:1));   // more stop frames -- hits land heavier
+    shake((0.22 + weight*1.5) * (0.65 + (w.shake||0.3)*0.6) * bw);   // chunkier -- and reads the weapon's AUTHORED shake so a cast-iron BONK out-kicks a spatula tink
+    hitstop(Math.min(0.22, 0.05 + weight*0.17) * (blocked?0.5:1));   // stop frames scale with weight but CAP at ~13f -- an uncapped heavy froze 20-25f, reading as a stall (and stacking dead time onto the combo-cancel, which waits out the freeze)
     const power=Math.min(1, weight*1.15) * bw;
     impactFrames(weight>0.75?4:(weight>0.45?3:(weight>0.2?2:1)), blocked?0x7fb2d6:(power>0.6?0xFFE03D:0xFFF6E3), 0x140c07);
     hitPost(power, blocked?0x7fb2d6:(w.metal?0xffe6a0:0xff6a1e));
@@ -3322,15 +3322,6 @@ function resolveHit(A, isPlayer){
   }
   if(landed && isPlayer){ addCombo(); GAME.hitsLanded++; }
   if(!landed && isPlayer){ sfx.whiff(); }
-}
-function hitWord(pos,heavy,w){
-  let txt,col,size;
-  if(w.key==='castiron'){ txt=pick(['TENDERIZED','SMASHED','CLOBBERED','SEASONED']); col='#ff6a1e'; size=heavy?40:32; }
-  else if(w.key==='knife'){ txt=pick(['SKEWERED','POKED','JABBED','JULIENNED']); col='#dfe6ea'; size=heavy?34:26; }
-  else if(w.metal){ txt=heavy?pick(['BONK','CLANG','WHACK','SERVED']):pick([' tink','PING','tap','ding']); col='#f4e4c1'; size=heavy?36:24; }
-  else { txt=heavy?pick(['CRACK','SMACK','SLAP']):pick(['pop','tap','boop']); col='#f4e4c1'; size=heavy?32:22; }
-  if(GAME.combo>=6) { txt=GAME.combo+' HIT COMBO!'; col='#8fc866'; size=40; }
-  popWord(pos,txt,col,size);
 }
 function addCombo(){ GAME.combo++; GAME.comboT=1.4; if(GAME.combo>GAME.maxCombo)GAME.maxCombo=GAME.combo;
   const c=document.getElementById('combo'); const n=document.getElementById('comboN');
@@ -3664,11 +3655,14 @@ function updatePlayer(dt, pad, actor){
     // fall); on the ground, normal light/heavy. (Heavy-in-air was caught above.)
     // UNCANCELLABLE: a swing is a full commitment -- you can only START a new one
     // once the current animation finishes. But a press mid-swing is BUFFERED and
-    // auto-fires the instant this swing ends (fluid combos without frame-perfect
-    // timing) -- accepted only past the wind-up so it queues the NEXT hit, and
-    // with a short life so a stale early tap doesn't fire.
+    // auto-fires at the combo-cancel (~0.09s after the hit frame). Accepted
+    // from 0.12s in -- just enough to reject the press that STARTED this swing --
+    // instead of half the windup, which discarded eager taps for the whole first
+    // ~0.5s of a heavy weapon's 2x windup. Life is anchored to THIS swing (+ a
+    // short tail), so it can't expire before a slow weapon's cancel point and a
+    // stale tap can't outlive the swing it was aimed at.
     if(!P.attack) beginSwing(wantHeavy);
-    else if(P.attack.t > P.attack.wind*0.5){ P.bufferedHeavy=wantHeavy; P.bufferT=0.9; } // long enough to survive a 2x windup + reach the post-hit cancel
+    else if(P.attack.t > Math.min(P.attack.wind*0.5, 0.12)){ P.bufferedHeavy=wantHeavy; P.bufferT=(P.attack.dur-P.attack.t)+0.25; }
   }
 
   // ----- integrate attack -----
@@ -3695,6 +3689,9 @@ function updatePlayer(dt, pad, actor){
     if(canChain && P.bufferedHeavy!=null && P.bufferT>0){
       const h=P.bufferedHeavy; P.bufferedHeavy=null; P.bufferT=0; P.attack=null; beginSwing(h);
     } else if(A.t>=A.dur){ P.attack=null; }
+    // (note: A.hit means "the hit FRAME fired", not "contact landed" -- so whiffed
+    // swings open canChain at the same cancel point as connects. No separate
+    // settle-flush is needed; a queued press always resolves through canChain.)
   }
 
   // ----- SPRINT + STAMINA (Engine.move, see engine.js) -----
@@ -4059,7 +4056,12 @@ function startGrab(e){
 function beginEnemyAttack(e,aim){
   if(e.attack)return;
   const heavy=(Math.random()<0.25 && e.kind==='tough') || !!e.slam;   // dashers always slam
-  const w=WEAPONS[e.wpn], M=ATK_SWING_MUL; const wind=(w.wind*e.wind*(heavy?1.4:1)+0.14)*M, active=0.09*M, rec=w.rec;
+  // the +0.14 readability telegraph sits OUTSIDE the swing multiplier (a fixed
+  // reaction window the player learns -- inside the *M it was silently doubled),
+  // with a floor so fast enemies can't wind up under human reaction time.
+  // heavy recovery mirrors the player's 1.3x for consistent trade windows.
+  const w=WEAPONS[e.wpn], M=ATK_SWING_MUL;
+  const wind=Math.max(w.wind*e.wind*(heavy?1.4:1)*M + 0.14, heavy?0.5:0.3), active=0.09*M, rec=w.rec*(heavy?1.3:1);
   e.attack={ wpn:e.wpn, heavy, t:0, wind, active, rec, dur:wind+active+rec, hitAt:wind, hit:false,
     side:(Math.random()<0.5?1:-1),
     shape:(e.wpn==='fists' ? PUNCHES[(Math.random()*PUNCHES.length)|0] : (heavy?FINISH:SWINGS[(Math.random()*SWINGS.length)|0])), aim };
@@ -4243,6 +4245,7 @@ const MIXAMO_ONESHOT = { atk_light:1,atk_heavy:1,atk_bat:1,atk_sword:1,atk_sword
 const JUMP_LAUNCH_FRAC=0.16;   // skip the jump clip's ground crouch (airborne starts here)
 const SLAM_STRIKE_FRAC=0.78;   // where the downswing contacts the ground in the jump-attack clip
 const SLAM_WINDUP_FRAC=0.42;   // where the overhead descent begins (a mid-air dive skips straight to here)
+const ATK_STRIKE_FRAC=0.55;    // where the baked attack clips hit their contact pose -- actionProgress pins this frame to A.hitAt so the visual strike lands exactly when the mechanical hit (hitstop/shake) fires
 // left-handed (male chef) picks the mirrored (_L) clip when one exists
 function mir(a,name){ return (a&&a.chef&&a.chef.userData&&a.chef.userData.whand===0 && MIXAMO.clips[name+'_L']) ? name+'_L' : name; }
 // move direction relative to facing -> '' (fwd) / '_b' / '_l' / '_r'
@@ -4657,7 +4660,17 @@ function actionProgress(a,name){
     return SLAM_WINDUP_FRAC;
   }
   const combat = a.attack && (/^c_|^h_|^atk_/.test(name) || name==='shoot');
-  if(combat){ const A=a.attack; return A?clamp(A.t/Math.max(A.dur,1e-3),0,1):0; }
+  if(combat){ const A=a.attack; if(!A) return 0;
+    if(name==='shoot') return clamp(A.t/Math.max(A.dur,1e-3),0,1);   // guns: the recoil clip rides the raw clock
+    // CONTACT-FRAME SYNC: a linear A.t/A.dur scrub puts the clip's strike pose
+    // wherever it happens to fall, so hitstop/shake fired while the arm was still
+    // mid-travel and the visual contact arrived frames later. Instead, pin the
+    // clip's contact pose (ATK_STRIKE_FRAC) exactly on A.hitAt: windup scrubs to
+    // the strike frame, then the rest plays out over active+recovery. (Same idea
+    // as SLAM_STRIKE_FRAC above; applies to player and enemy swings alike.)
+    if(A.t<A.hitAt) return ATK_STRIKE_FRAC*clamp(A.t/Math.max(A.hitAt,1e-3),0,1);
+    return ATK_STRIKE_FRAC + (1-ATK_STRIKE_FRAC)*clamp((A.t-A.hitAt)/Math.max(A.dur-A.hitAt,1e-3),0,1);
+  }
   if(/^throw|^toss/.test(name)) return clamp(a._tossT||0,0,1);
   if(name==='hit'||/^react_big/.test(name)) return clamp(1-(a.stagger||0)/0.6,0,1);
   return 0;
