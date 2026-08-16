@@ -3645,6 +3645,13 @@ function updatePlayer(dt, pad, actor){
     if(P.wpn==='plate') throwNightPlate(P);
     else if(!COOKING && P.wpn!=='fists' && !WEAPONS[P.wpn].ranged) throwWeapon(P);
   }
+  // GRAB-BUTTON READOUT: label the shared button with the verb it WILL fire
+  if(!REMOTE){
+    if(_grabLab===undefined) _grabLab=document.querySelector('[data-b="pickup"] .lab');
+    if(_grabLab){ let txt='GRAB';
+      if(!COOKING){ const _al=Math.hypot(mv.x,mv.z)||1; const v=predictGrabVerb(P, moving, mv.x/_al, mv.z/_al); if(v) txt=v; }
+      if(_grabLab.textContent!==txt) _grabLab.textContent=txt; }
+  }
   if(!COOKING && !P.attack && (pad.pickup||pad.rush||(!REMOTE&&(tapK('f')||consume('pickupEdge'))))){   // no grab/throw/drop/pickup mid-swing
     let ax=mv.x, az=mv.z; const al=Math.hypot(ax,az);
     if(al>1e-3){ ax/=al; az/=al; } else { ax=Math.sin(P.facing); az=Math.cos(P.facing); }
@@ -3941,6 +3948,7 @@ function updatePlayer(dt, pad, actor){
   if(P.dodge) { /* keep facing */ }
 
   if(P.hold) updateHold(P,dt);                  // drive the held patron in front of us (after pos+facing settle)
+  else if(P===player) hideThrowAim();           // no hold -> retract the throw reticle
 
   P.speed=Math.hypot(P.vel.x,P.vel.z);
   P.movePhase+=dt*P.speed*2.4;
@@ -6080,6 +6088,24 @@ function rushTarget(P, aimx, aimz){
     if(score>bs){ bs=score; best=e; } }
   return best;
 }
+// PREDICT which verb the shared grab button will fire, so its label can show it
+// BEFORE you press (the 7-way context button is otherwise a guess). Mirrors the
+// priority chain in updatePlayer; pure read, no side effects.
+let _grabLab;
+function predictGrabVerb(P, moving, ax, az){
+  if(GAME.mode!=='play' || P.attack) return null;
+  if(P.hold) return 'THROW';
+  if(P.wpn==='plate'){ for(const e of enemies){ if(!e.dead && e.kind==='hangry' && Math.hypot(e.pos.x-P.pos.x,e.pos.z-P.pos.z)<2.3) return 'SERVE'; } }
+  const near=grabTarget(P, GRAB_REACH, 1.4);
+  if(near) return near.wpn!=='fists' ? 'WRESTLE' : 'GRAB';
+  if(moving){ const rt=rushTarget(P, ax, az); if(rt && P.tackleCD<=0) return 'RUSH'; }
+  const mate=coopPartner(P);
+  if(mate && !mate.dead && !mate.grabbed && !mate.hold && !mate.steal && !((mate.stagger||0)>0) && !((mate.down||0)>0) && !(mate._tossed>0) && Math.hypot(mate.pos.x-P.pos.x,mate.pos.z-P.pos.z)<1.4) return 'TOSS';
+  if(atBar(P)) return 'CHUG';
+  if(P.wpn!=='fists') return 'DROP';
+  if(nearPickup && Math.hypot(nearPickup.x-P.pos.x,nearPickup.z-P.pos.z)<2.0) return 'PICKUP';
+  return 'GRAB';
+}
 function grabEnemy(P,e){
   const ang=Math.atan2(e.pos.x-P.pos.x, e.pos.z-P.pos.z);
   P.facing=ang;
@@ -6166,9 +6192,29 @@ function updateSteal(P,dt,pad){
     const cp=e.pos.clone(); cp.y=1.3; popWord(cp,'HELD ON!','#7fb2d6',22); return;
   }
 }
+/* THROW-AIM MARKER: a persistent ground reticle at the resolved throw target while
+   holding, colour-coded by the pending mode (cyan=overboard, orange=slam,
+   cream=throw) so the throw LINE and which finisher is armed are always readable --
+   not a one-shot popword. Pulses in the last 0.5s before the auto-throw. */
+let _throwAim=null;
+function throwAimMarker(){ if(_throwAim) return _throwAim;
+  const g=new THREE.Group();
+  const ring=new THREE.Mesh(new THREE.RingGeometry(0.34,0.52,28), new THREE.MeshBasicMaterial({color:0xf4e4c1,transparent:true,opacity:0.85,depthWrite:false,side:THREE.DoubleSide}));
+  ring.rotation.x=-Math.PI/2; ring.position.y=0.05; g.add(ring);
+  const inner=new THREE.Mesh(new THREE.CircleGeometry(0.30,24), new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:0.16,depthWrite:false,side:THREE.DoubleSide}));
+  inner.rotation.x=-Math.PI/2; inner.position.y=0.045; g.add(inner);
+  g.visible=false; scene.add(g); _throwAim={g,ring,inner}; return _throwAim;
+}
+function showThrowAim(x,z,mode,pulse){ const m=throwAimMarker(); m.g.visible=true; m.g.position.set(x,0,z);
+  const col=mode==='overboard'?0x5fd0ff:mode==='slam'?0xff6a1e:0xf4e4c1;
+  m.ring.material.color.setHex(col); m.inner.material.color.setHex(col);
+  m.g.scale.setScalar(pulse ? 1.0+Math.abs(Math.sin(GAME.t*22))*0.28 : 1.0);
+  m.ring.material.opacity=pulse?0.95:0.8;
+}
+function hideThrowAim(){ if(_throwAim) _throwAim.g.visible=false; }
 function updateHold(P,dt){
   const H=P.hold, e=H.e;
-  if(!e || e.dead){ P.hold=null; return; }                     // soak safety: never orphan the hold
+  if(!e || e.dead){ P.hold=null; if(P===player) hideThrowAim(); return; }   // soak safety: never orphan the hold
   H.t+=dt;
   if(H.jabCD>0) H.jabCD-=dt;                                    // jab cadence
   if(P._holdJab) P._holdJab=Math.max(0,P._holdJab-dt*6);        // jab-pose decay (~0.16s punch)
@@ -6184,6 +6230,7 @@ function updateHold(P,dt){
   // contextual telegraph: call out the aim when it CHANGES (no pool spam). LATCH it
   // so throwHeld executes the mode the player was shown, not a one-frame-later recompute.
   const ctx=throwContext(P); H.ctx=ctx;
+  if(P===player) showThrowAim(ctx.x, ctx.z, ctx.mode, (GRAB_HOLD_MAX-H.t)<0.55);   // live ground reticle at the throw target
   if(ctx.mode!==H.mode){ H.mode=ctx.mode;
     const lbl=ctx.mode==='overboard'?'OVERBOARD':ctx.mode==='slam'?'SLAM':'THROW';
     const col=ctx.mode==='overboard'?'#5fd0ff':ctx.mode==='slam'?'#ff6a1e':'#f4e4c1';
