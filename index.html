@@ -3168,7 +3168,13 @@ function attackDrive(a){
     f = rk<0.45 ? (1 - rk*0.5)                          // follow through -- keep driving past contact
                 : Math.max(0, 1-rk)*0.7;                // then decelerate into recovery
   }
-  return f * base * combo * (A.heavy?6.8:5.2) * (0.7 + 0.5*(w&&w.heft!=null?w.heft:0.3));   // heft deepens the step-in: cast iron commits, a knife stays darty
+  // close the gap to the COMMITTED target: a constant-magnitude lunge overshoots
+  // a point-blank enemy and falls short at max reach (and heft deepening the step
+  // made both worse). Scale by distance-to-contact, clamped so it never rockets.
+  let reachAdj=1; const tg=(a.comboTarget&&!a.comboTarget.dead)?a.comboTarget:((A.target&&!A.target.dead)?A.target:null);
+  if(tg&&tg.pos){ const d=Math.hypot(tg.pos.x-a.pos.x, tg.pos.z-a.pos.z), want=(w?w.reach:1.2)*0.75;
+    reachAdj=clamp(d/Math.max(0.4,want), 0.45, 1.5); }
+  return f * base * combo * reachAdj * (A.heavy?6.8:5.2) * (0.7 + 0.5*(w&&w.heft!=null?w.heft:0.3));   // heft deepens the step-in: cast iron commits, a knife stays darty
 }
 function resolveHit(A, isPlayer){
   const w=WEAPONS[A.attack.wpn], heavy=A.attack.heavy;
@@ -4713,8 +4719,10 @@ function driveClips(a, dt){
     const na=mx.clipAction(nc); na.enabled=true; na.setLoop(one?THREE.LoopOnce:THREE.LoopRepeat); na.clampWhenFinished=one;
     const oClip=a._curClip?clipFor(a,a._curClip):null; const oc=oClip?mx.clipAction(oClip):null;
     na.reset();
-    if(oc && !one && !a._curOne){ na.play().fadeIn(0.16); oc.fadeOut(0.16); }   // smooth locomotion<->locomotion
-    else { if(oc) oc.stop(); na.setEffectiveWeight(1); na.play(); }             // snap in/out of scrubbed one-shots
+    if(oc && !one && !a._curOne){ na.play().fadeIn(0.16); oc.fadeOut(0.16); }        // smooth locomotion<->locomotion
+    else if(oc && one && !a._curOne){ na.play().fadeIn(0.07); oc.fadeOut(0.07); }    // locomotion -> swing: a 4-frame WEIGHT fade kills the mid-stride teleport-pop; the strike clock still hard-scrubs time below
+    else if(oc && !one && a._curOne){ na.play().fadeIn(0.10); oc.fadeOut(0.10); }    // swing -> locomotion: dissolve the settle instead of popping back to the walk
+    else { if(oc) oc.stop(); na.setEffectiveWeight(1); na.play(); }                  // swing -> swing (combo chain): SNAP -- a crisp new windup reads better than a blur
     a._curClip=name; a._curOne=one;
   }
   // scrub one-shots to game progress; loops advance on their own
