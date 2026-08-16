@@ -3648,22 +3648,28 @@ function updatePlayer(dt, pad, actor){
   if(!COOKING && !P.attack && (pad.pickup||pad.rush||(!REMOTE&&(tapK('f')||consume('pickupEdge'))))){   // no grab/throw/drop/pickup mid-swing
     let ax=mv.x, az=mv.z; const al=Math.hypot(ax,az);
     if(al>1e-3){ ax/=al; az/=al; } else { ax=Math.sin(P.facing); az=Math.cos(P.facing); }
-    const barTarget = moving ? (rushTarget(P, ax, az) || grabTarget(P, GRAB_REACH, 1.4)) : grabTarget(P, GRAB_REACH, 1.4);
+    // GRAB-IN-REACH always beats a rush: someone already in your face is grabbed IN
+    // PLACE regardless of stick drift (on a phone the stick is never truly neutral,
+    // so the old `moving?rush:grab` turned every grab into a charge). Only rush when
+    // nobody's in immediate reach and you're deliberately moving toward a farther one.
+    const near=grabTarget(P, GRAB_REACH, 1.4);
+    const rushT=(!near && moving) ? rushTarget(P, ax, az) : null;
     const _mate=coopPartner(P);
-    if(P.wpn==='plate' && tryServeHangry(P)){ /* handed the plate to a hangry customer */ }
-    else if(!barTarget && _mate && !_mate.dead && !(_mate._tossed>0) && Math.hypot(_mate.pos.x-P.pos.x,_mate.pos.z-P.pos.z)<1.4){ tossPartner(P,_mate); }   // co-op: yeet your partner
-    else if(P.hold){ throwHeld(P); }
-    else if(atBar(P) && !barTarget){ chugDrink(P); }            // at the bar, nobody in reach: chug
-    else if(moving){
-      const t=barTarget;
-      if(t){ if(P.wpn!=='fists') dropWeapon(P); startGrabRush(P, t); }
+    if(P.hold){ throwHeld(P); }                                  // HANDS FULL -> throw the hostage: never ambiguous, always wins
+    else if(P.wpn==='plate' && tryServeHangry(P)){ /* handed the plate to a hangry customer */ }
+    else if(near){                                               // GRAB IN PLACE (auto-drop a weapon first, like the rush path)
+      if(P.wpn!=='fists') dropWeapon(P);
+      if(near.wpn!=='fists') startWeaponSteal(P,near); else grabEnemy(P,near);
     }
-    else if(P.wpn!=='fists'){ dropWeapon(P); }
-    else {
-      const g=barTarget;
-      if(g){ if(g.wpn!=='fists') startWeaponSteal(P,g); else grabEnemy(P,g); }
-      else if(nearPickup && Math.hypot(nearPickup.x-P.pos.x, nearPickup.z-P.pos.z)<2.0) tryPickup();
+    else if(rushT && P.tackleCD<=0){                             // nobody in reach, a target ahead -> CHARGE (drop weapon only if the rush actually starts)
+      if(P.wpn!=='fists') dropWeapon(P); startGrabRush(P, rushT);
     }
+    else if(_mate && !_mate.dead && !_mate.grabbed && !_mate.hold && !_mate.steal && (_mate.stagger||0)<=0 && !(_mate.down>0) && !(_mate._tossed>0)
+            && Math.hypot(_mate.pos.x-P.pos.x,_mate.pos.z-P.pos.z)<1.4 && tossPartner(P,_mate)){ /* co-op: yeet your partner (only when there's nothing to grab) */ }
+    else if(atBar(P)){ chugDrink(P); }                          // at the bar, nothing to grab -> chug
+    else if(P.wpn!=='fists'){ dropWeapon(P); }                  // stationary, armed, no target -> ditch the weapon
+    else if(nearPickup && Math.hypot(nearPickup.x-P.pos.x, nearPickup.z-P.pos.z)<2.0){ tryPickup(); }
+    else { P.grabCD=Math.max(P.grabCD,0.14); sfx.whiff(); }     // empty grab: a whiff with a hair of recovery so the press always reads
   }
 
   // ===== SPUD GUN — twin-stick shooter: aim with the right stick (or pad rstick / mouse-hold),
@@ -3860,8 +3866,12 @@ function updatePlayer(dt, pad, actor){
     } else {
       P.vel.x=T.dir.x*13*(0.5+k*0.5); P.vel.z=T.dir.z*13*(0.5+k*0.5);   // plain tackle lunge (dead path)
     }
-    if(!T.hit){                                 // reach the first person we plow into
-      for(const e of enemies){ if(e.dead)continue;
+    if(!T.hit){                                 // reach the person we plow into
+      // prefer the target we COMMITTED to (a slightly larger catch radius) so a
+      // bystander clipped en route doesn't hijack the grab into a random shove
+      if(T.rush && T.tgt && !T.tgt.dead && Math.hypot(T.tgt.pos.x-P.pos.x,T.tgt.pos.z-P.pos.z) < (T.tgt.r||0.34)+P.r+0.5){
+        rushContact(P,T.tgt); T.hit=true;
+      } else for(const e of enemies){ if(e.dead)continue;
         if(Math.hypot(e.pos.x-P.pos.x,e.pos.z-P.pos.z) < e.r+P.r+0.35){
           if(T.rush) rushContact(P,e); else tackleEnemy(P,e);   // rush -> grab/steal; plain tackle -> shove
           T.hit=true; break; } }
@@ -6031,25 +6041,30 @@ function updateDrunk(P,dt){
 }
 // GRABBABLE: anyone NOT mid-swing, OR a heavy (tough) patron -- the big guys can
 // be grabbed even out of their wind-up. (Replaces the old "must be staggered".)
-function canGrab(e){ return e && !e.dead && !e.boss && e.state!=='held' && (!e.attack || e.kind==='tough'); }   // a boss is too big to grab/throw
-// nearest grabbable enemy within `reach`, roughly in front (cone). Ground only.
+function canGrab(e){ return e && !e.dead && !e.boss && !e._thrown && e.state!=='held' && (!e.attack || e.kind==='tough'); }   // a boss is too big; an in-flight (thrown) body can't be snatched mid-slide
+// the grabbable enemy you're FACING within `reach`, ground only. Scores by facing
+// then distance (like rushTarget) so a grab snaps to who you point at, not merely
+// the nearest body; reach is measured to their SURFACE so big/tough patrons pressed
+// against you don't whiff.
 function grabTarget(P, reach, cone){
   if(P.hold||P.steal||P.grabbed||P.grabCD>0||P.attack||P.tackle||P.dodge||P.stagger>0) return null;
   if(P.pos.y>restY(P.pos.x,P.pos.z,P.pos.y,P.r)+0.1) return null;   // ground only
   reach=reach||GRAB_REACH; cone=(cone==null?1.4:cone);
-  let best=null,bd=reach;
+  let best=null,bs=-1e9;
   for(const e of enemies){ if(!canGrab(e)) continue;
-    const dx=e.pos.x-P.pos.x, dz=e.pos.z-P.pos.z, d=Math.hypot(dx,dz);
-    if(d>bd) continue;
+    const dx=e.pos.x-P.pos.x, dz=e.pos.z-P.pos.z, d=Math.hypot(dx,dz)||1e-4;
+    const surf=d-(e.r||0.34);                                  // gap to their BODY, not their centre
+    if(surf>reach) continue;
     const ang=Math.atan2(dx,dz); let da=((ang-P.facing+Math.PI)%TAU)-Math.PI;
     if(Math.abs(da)>cone) continue;                            // roughly in front
-    bd=d; best=e; }
+    const score=Math.cos(da) - surf*0.25;                      // whoever you're facing wins, then nearest
+    if(score>bs){ bs=score; best=e; } }
   return best;
 }
 // a target for the RUSH: a grabbable enemy within a wider range, in the move/face
 // direction (aim is a unit vector), so a run-up grab finds someone a few metres off.
 function rushTarget(P, aimx, aimz){
-  if(P.hold||P.steal||P.grabbed||P.tackle||P.dodge||P.stagger>0||P.tackleCD>0) return null;
+  if(P.hold||P.steal||P.grabbed||P.tackle||P.dodge||P.stagger>0||P.tackleCD>0||P.grabCD>0) return null;   // grabCD: the rush path used to skip the post-throw lockout
   let best=null, bs=-1;
   for(const e of enemies){ if(!canGrab(e)) continue;
     const dx=e.pos.x-P.pos.x, dz=e.pos.z-P.pos.z, d=Math.hypot(dx,dz)||1;
@@ -6086,7 +6101,7 @@ function dropWeapon(P){
 // GRAB RUSH: a committed charge (like the tackle) that ENDS in a grab -- see
 // rushContact. Aims at the given target so you converge onto them.
 function startGrabRush(P, tgt){
-  if(P.tackle||P.dodge||P.attack||P.grabbed||P.hold||P.steal||P.stagger>0||P.tackleCD>0) return;
+  if(P.tackle||P.dodge||P.attack||P.grabbed||P.hold||P.steal||P.stagger>0||P.tackleCD>0||P.grabCD>0) return false;
   let dir;
   if(tgt){ dir=new V3(tgt.pos.x-P.pos.x,0,tgt.pos.z-P.pos.z); P.facing=Math.atan2(dir.x,dir.z); }
   else dir=new V3(Math.sin(P.facing),0,Math.cos(P.facing));
@@ -6097,6 +6112,7 @@ function startGrabRush(P, tgt){
   P.tackle={ t:0, dur:1.0, dir, hit:false, rush:true, tgt:tgt||null };
   P.tackleCD=0.7; P.iframe=Math.max(P.iframe,0.16); P.attack=null; P.guard=false;
   sfx.step(); shake(0.2); haptic(0.3,0.4,60);
+  return true;
 }
 // what a grab RUSH does on contact: grab an unarmed patron into the hold, wrestle
 // an armed one for their weapon, or just bowl over anyone mid-swing you can't grab.
