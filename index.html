@@ -3154,6 +3154,14 @@ function nearestEnemy(fromPos, facingYaw, cone){
    per-class tempo -- light flurries chain tight, heavies land on down-beats. */
 const ATK_SWING_MUL={ light:2.0, medium:1.8, heavy:1.5, shield:1.7 };
 const atkActive=(w,heavy)=>(0.08 + (w.heft==null?0.3:w.heft)*0.10)*(heavy?1.15:1);
+/* rising windup WHOOSH on committed heavies: an audio telegraph scaled by heft --
+   the weight is audible before it lands, and an enemy's heavy becomes reactable
+   by ear, not just by eye. Pitch sweeps up across the windup; airy band on top. */
+function swingWhoosh(w,heavy,wind){ if(!AC||!heavy) return;
+  const h=w.heft==null?0.3:w.heft; if(h<0.45) return;
+  tone(60+50*h, 160+150*h, Math.min(wind,0.9), 'sawtooth', 0.04+0.09*h);
+  noise(Math.min(wind,0.9), 0.05+0.08*h, 500+400*h, 1.2);
+}
 function startAttack(atk){ // atk shared by player/enemy: {heavy}
   const A=atk.actor, w=WEAPONS[atk.wpn];
   if(A.attack||A.stagger>0||A.dead||(A.dodge)) return false;
@@ -3165,6 +3173,7 @@ function startAttack(atk){ // atk shared by player/enemy: {heavy}
       ? (atk.heavy?HEAVY_PUNCHES[(A.comboStep||0)%HEAVY_PUNCHES.length]:PUNCHES[(A.comboStep||0)%PUNCHES.length])
       : (atk.heavy?HEAVY_SWINGS[(A.comboStep||0)%HEAVY_SWINGS.length]:SWINGS[(A.comboStep||0)%SWINGS.length])), target:atk.target||null };
   if(w.metal) {} // swing sound at hit
+  swingWhoosh(w, atk.heavy, wind);   // heavies announce themselves on the way up
   return true;
 }
 /* kinetic-chain lunge: the signed forward speed (m/s) the body drives along its
@@ -3357,6 +3366,7 @@ function resolveHit(A, isPlayer){
     if(isPlayer){ if(T.hp<=0){ killChef(T, ang); } }
     else { playerHurtFlash(taken); break; } // enemy hits the player once
   }
+  if(A.attack) A.attack._landed=landed;   // feeds the whiff-cancel gradient in the integrate block
   // durability
   if(isPlayer && landed && A.wpn!=='fists' && w.dur!==Infinity){
     A.dur -= heavy?2:1;
@@ -3753,9 +3763,12 @@ function updatePlayer(dt, pad, actor){
     // cancel, but a heavy never recovery-cancels -- its full follow-through IS the
     // down-beat, so a string reads L-L-H, a breath, then the next string. A press
     // queued during the heavy still fires at the settle below (input never eaten).
-    // (note: A.hit means "the hit FRAME fired", not "contact landed" -- whiffed
-    // lights open canChain at the same cancel point as connects.)
-    const canChain = A.hit && !A.heavy && A.t >= A.hitAt + A.active*0.5;
+    // WHIFF GRADIENT: a connect chains fast off the cancel point, but a MISS rides
+    // ~60% of the recovery before the next swing can come out -- landing hits is
+    // what keeps a string fast, and swinging at air has a readable price (the
+    // defensive weave-out above still exits at the early gate either way).
+    const cancelAt = A._landed ? (A.hitAt + A.active*0.5) : (A.wind + A.active + A.rec*0.6);
+    const canChain = A.hit && !A.heavy && A.t >= cancelAt;
     if(canChain && P.bufferedHeavy!=null && P.bufferT>0){
       const h=P.bufferedHeavy; P.bufferedHeavy=null; P.bufferT=0; P.attack=null; beginSwing(h);
     } else if(A.t>=A.dur){ P.attack=null;
@@ -4136,6 +4149,7 @@ function beginEnemyAttack(e,aim){
   e.attack={ wpn:e.wpn, heavy, t:0, wind, active, rec, dur:wind+active+rec, hitAt:wind, hit:false,
     side:(Math.random()<0.5?1:-1),
     shape:(e.wpn==='fists' ? PUNCHES[(Math.random()*PUNCHES.length)|0] : (heavy?FINISH:SWINGS[(Math.random()*SWINGS.length)|0])), aim };
+  swingWhoosh(w, heavy, wind);   // an enemy heavy is reactable by ear too
   e.state='attacking';
 }
 function syncEnemyMesh(e,dt,wantYaw){
@@ -4316,7 +4330,12 @@ const MIXAMO_ONESHOT = { atk_light:1,atk_heavy:1,atk_bat:1,atk_sword:1,atk_sword
 const JUMP_LAUNCH_FRAC=0.16;   // skip the jump clip's ground crouch (airborne starts here)
 const SLAM_STRIKE_FRAC=0.78;   // where the downswing contacts the ground in the jump-attack clip
 const SLAM_WINDUP_FRAC=0.42;   // where the overhead descent begins (a mid-air dive skips straight to here)
-const ATK_STRIKE_FRAC=0.55;    // where the baked attack clips hit their contact pose -- actionProgress pins this frame to A.hitAt so the visual strike lands exactly when the mechanical hit (hitstop/shake) fires
+/* where each attack clip hits its contact pose -- actionProgress pins this frame
+   to A.hitAt so the visual strike lands exactly when the mechanical hit fires.
+   Per-clip because the silhouettes differ: the straight stab contacts early, the
+   big overhead late. Unlisted clips (punch pool etc.) use .default. */
+const ATK_STRIKE_FRAC={ atk_light:0.48, atk_heavy:0.62, atk_bat:0.60,
+  atk_sword:0.55, atk_sword_L:0.55, atk_shield:0.50, atk_shield_L:0.50, default:0.55 };
 // left-handed (male chef) picks the mirrored (_L) clip when one exists
 function mir(a,name){ return (a&&a.chef&&a.chef.userData&&a.chef.userData.whand===0 && MIXAMO.clips[name+'_L']) ? name+'_L' : name; }
 // move direction relative to facing -> '' (fwd) / '_b' / '_l' / '_r'
@@ -4507,6 +4526,7 @@ const _lv=new V3(), _ld=new V3(), _lbp=new V3(), _lrd=new V3(), _ltd=new V3(),
       _lHead=new V3(), _lpush=new V3(), _lcp=new V3(), _lab=new V3(),
       _cNe=new V3(), _cSp=new V3(), _cLo=new V3(), _cLa=new V3(), _cRa=new V3(), _cLh=new V3(), _cRh=new V3();
 const _gq=new THREE.Quaternion(), _gqh=new THREE.Quaternion(), _ge=new THREE.Euler(), _gv=new V3();   // world-aim gun scratch
+const _wtp=new V3();   // weapon-trail tip scratch
 const _ikT=new V3(), _ikS=new V3(), _ikE=new V3(), _ikH=new V3(), _ikA=new V3(), _ikX=new V3(), _ikD=new V3(),
       _ikQ=new THREE.Quaternion(), _ikQ2=new THREE.Quaternion(), _ikQ3=new THREE.Quaternion();       // support-hand IK scratch
 
@@ -4738,14 +4758,18 @@ function actionProgress(a,name){
   const combat = a.attack && (/^c_|^h_|^atk_/.test(name) || name==='shoot');
   if(combat){ const A=a.attack; if(!A) return 0;
     if(name==='shoot') return clamp(A.t/Math.max(A.dur,1e-3),0,1);   // guns: the recoil clip rides the raw clock
-    // CONTACT-FRAME SYNC: a linear A.t/A.dur scrub puts the clip's strike pose
-    // wherever it happens to fall, so hitstop/shake fired while the arm was still
-    // mid-travel and the visual contact arrived frames later. Instead, pin the
-    // clip's contact pose (ATK_STRIKE_FRAC) exactly on A.hitAt: windup scrubs to
-    // the strike frame, then the rest plays out over active+recovery. (Same idea
-    // as SLAM_STRIKE_FRAC above; applies to player and enemy swings alike.)
-    if(A.t<A.hitAt) return ATK_STRIKE_FRAC*clamp(A.t/Math.max(A.hitAt,1e-3),0,1);
-    return ATK_STRIKE_FRAC + (1-ATK_STRIKE_FRAC)*clamp((A.t-A.hitAt)/Math.max(A.dur-A.hitAt,1e-3),0,1);
+    // CONTACT-FRAME SYNC + STRIKE SNAP: pin the clip's contact pose (per-clip
+    // ATK_STRIKE_FRAC) exactly on A.hitAt -- where the mechanical hit and the
+    // hitstop/shake fire -- and EASE each side: the windup loads slowly then
+    // SNAPS into the strike (pow 1.6), the follow-through launches fast and
+    // decelerates into the settle. A constant-speed scrub is what made swings
+    // read as pushed through mud; and since hitlag freezes A.t right at hitAt,
+    // the eye now parks on the contact pose for the freeze. (Same idea as
+    // SLAM_STRIKE_FRAC above; applies to player and enemy swings alike.)
+    const SF=ATK_STRIKE_FRAC[name]!=null?ATK_STRIKE_FRAC[name]:ATK_STRIKE_FRAC.default;
+    if(A.t<A.hitAt){ const k=clamp(A.t/Math.max(A.hitAt,1e-3),0,1); return SF*Math.pow(k,1.6); }
+    const k=clamp((A.t-A.hitAt)/Math.max(A.dur-A.hitAt,1e-3),0,1);
+    return SF + (1-SF)*(1-Math.pow(1-k,2));
   }
   if(/^throw|^toss/.test(name)) return clamp(a._tossT||0,0,1);
   if(name==='hit'||/^react_big/.test(name)) return clamp(1-(a.stagger||0)/0.6,0,1);
@@ -4787,10 +4811,26 @@ function poseChef(a, isPlayer, dt){
   driveClips(a, dt);
   // thin cosmetic layer: red hurt-flash, else neon emissive (synthwave enemies)
   const m=u.mats, hurt=a.hurt||0, n=u.neon||{};
+  // ENEMY WINDUP TELL: the jacket heats up across an incoming swing's windup --
+  // amber for lights, red-hot for heavies -- so the threat reads at mobile scale
+  // even in a crowd. Player (and P2) excluded; the hurt-flash wins ties.
+  const tellK=(!isPlayer && a.attack && !a.attack.hit)
+    ? Math.pow(clamp(a.attack.t/Math.max(a.attack.wind,1e-3),0,1),1.5) : 0;
   const setE=(mat,restCol,restI)=>{ if(!mat||!mat.emissive) return;
     if(hurt>0.01){ mat.emissive.setHex(0xff2418); mat.emissiveIntensity=Math.min(hurt,1)*0.42; }   // subtle red damage tint (was 0.9 -> blew the whole shirt white under bloom)
+    else if(tellK>0.04){ mat.emissive.setHex(a.attack.heavy?0xff4526:0xffb040); mat.emissiveIntensity=tellK*(a.attack.heavy?0.5:0.28); }
     else { mat.emissive.setHex(restCol||0x000000); mat.emissiveIntensity=restI||0; } };
   if(m){ setE(m.jacket, n.col, n.jacketI); setE(m.skin, n.col, n.skinI); setE(m.apron, n.col, n.jacketI); }
+  // WEAPON TRAIL: while the blade is LIVE (a beat before the hit frame through the
+  // end of the active window) shed a spark from the tip each frame -- the hot
+  // frames become visible, and the arc reads per-weapon via the tint.
+  { const At=a.attack, ww=At&&WEAPONS[At.wpn];
+    if(At && ww && !ww.ranged && At.wpn!=='fists' && u.weaponGroup &&
+       At.t>=At.hitAt-0.06 && At.t<=At.hitAt+At.active){
+      u.weaponGroup.updateWorldMatrix(true,false);
+      _wtp.set(0,0,Math.max(0.35,(ww.reach||1.2)*0.45)).applyMatrix4(u.weaponGroup.matrixWorld);
+      burst(_wtp, 1, ww.tint||0xfff1d6, 0.35);
+    } }
   // SPUD GUN: aim the barrel in WORLD space every frame. The Mixamo hand bone's local axes run
   // +Y along the fingers (not +Z forward), so any static parent-space rotation leaves the gun
   // lying SIDEWAYS across the chest. Instead: desired world orientation = the actor's aim yaw
