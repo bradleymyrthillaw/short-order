@@ -2431,7 +2431,21 @@ function makeChefOld(o){
 }
 /* restore the standing pose after a ragdoll (the ragdoll leaves torso/head/hips posed) */
 function resetRagPose(a){
-  const u=a.chef.userData, R=u.rest; if(!R) return;
+  const u=a.chef.userData;
+  // NEW Mixamo skinned rig: buildRagdollSkel took the bones over and STOPPED the
+  // mixer (stopAllAction). Clearing the ragdoll isn't enough -- we must hand the
+  // bones back to the clips or the chef stays limp forever. This is the reused
+  // PLAYER's reset between nights; skipping it left a dead body you couldn't
+  // re-run (and it read as a second, broken character on the deck).
+  if(u.skel){
+    a.rag=null; a._overboard=null; a._splash=null; a.deadT=0;
+    a.chef.scale.setScalar(a.kind==='tough'?1.12:1);
+    if(u.cos) for(const m of u.cos) m.visible=true;
+    if(a._mixer) a._mixer.stopAllAction();     // drop the frozen ragdoll-era actions...
+    a._curClip=null; a._curOne=false; a._atkRef=null; a._comboIdx=0;   // ...and force driveClips to re-play a fresh clip next frame (re-seats the hips + resumes animation)
+    return;
+  }
+  const R=u.rest; if(!R) return;
   a.rag=null;
   u.torso.position.copy(R.torso.p); u.torso.quaternion.copy(R.torso.q); u.torso.scale.copy(R.torso.s);
   u.head.position.copy(R.head); u.head.rotation.set(0,0,0);
