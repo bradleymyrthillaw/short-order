@@ -3430,13 +3430,6 @@ function resolveHit(A, isPlayer){
 }
 function addCombo(){ GAME.combo++; GAME.comboT=1.4; if(GAME.combo>GAME.maxCombo)GAME.maxCombo=GAME.combo;
   if(GAME.combo>=HEAT_ON && player){ if(!((player._heat||0)>0)) popWord({x:player.pos.x,y:2.5,z:player.pos.z},'🔥 HEAT!','#ff6a1e',26); player._heat=HEAT_DUR; }
-  // RAGE charge: every landed hit feeds the super meter -- faster while HEAT is lit,
-  // so a sustained assault fills it. Latches READY at full and announces itself once.
-  if(player && !player._rageSeq){ const was=player._rage||0;
-    player._rage=Math.min(100, was + (((player._heat||0)>0)?11:7));
-    if(player._rage>=100 && was<100){ player._rageReady=true;
-      popWord({x:player.pos.x,y:2.9,z:player.pos.z},'⚡ RAGE READY','#ffd23d',30);
-      if(AC) sfx.heavy(0.7); haptic(0.85,0.7,180); } }
   const c=document.getElementById('combo'); const n=document.getElementById('comboN');
   if(GAME.combo>=2){ c.classList.add('on'); n.textContent=GAME.combo;
     n.animate([{transform:'scale(1.4)'},{transform:'scale(1)'}],{duration:180}); } }
@@ -3549,7 +3542,12 @@ function updatePlayer(dt, pad, actor){
   P.weaveCD=Math.max(0,P.weaveCD-dt); P.dodgeCD=Math.max(0,P.dodgeCD-dt); P.chainT=Math.max(0,P.chainT-dt); P.tackleCD=Math.max(0,P.tackleCD-dt); P.jumpCD=Math.max(0,P.jumpCD-dt); P.slamHit=Math.max(0,P.slamHit-dt); P.grabCD=Math.max(0,P.grabCD-dt);
   P._heat=Math.max(0,(P._heat||0)-dt); P._tornadoCD=Math.max(0,(P._tornadoCD||0)-dt);   // HEAT window + tornado cooldown
   P._rageCD=Math.max(0,(P._rageCD||0)-dt);                                               // RAGE re-trigger lockout
-  if(!P._rageSeq && (P._rage||0)<100 && GAME.comboT<=0) P._rage=Math.max(0,(P._rage||0)-dt*6);   // meter bleeds out of combat (never once it's full/READY)
+  // RAGE is a once-per-night super now: it charges on the CLOCK (ready ~60s into the
+  // fight), holds at full until you spend it, and once used it's gone for the night.
+  if(GAME.mode==='play' && !P._rageSeq && !P._rageUsed && (P._rage||0)<100){
+    P._rage=Math.min(100,(P._rage||0)+dt*(100/RAGE_CHARGE));
+    if(P._rage>=100 && !P._rageReady){ P._rageReady=true;
+      popWord({x:P.pos.x,y:2.9,z:P.pos.z},'⚡ RAGE READY','#ffd23d',30); if(AC) sfx.heavy(0.7); haptic(0.85,0.7,180); } }
   if((P._heat||0)>0 && (P._steamT=(P._steamT||0)-dt)<=0){ P._steamT=0.14; const sp=P.pos.clone(); sp.y=1.6+Math.random()*0.5; burst(sp,2,0xffe6c0,0.35); }   // sizzle steam
   // buffered-attack lifetime + combo-target upkeep (see beginSwing / the attack integrate)
   P.bufferT=Math.max(0,(P.bufferT||0)-dt); if(P.bufferT<=0) P.bufferedHeavy=null;
@@ -6391,17 +6389,18 @@ function kitchenTornado(P){
   return true;
 }
 /* ==================== RAGE MODE — the Valley-of-the-End combo ================
-   Earned by sustained aggression (addCombo feeds the meter, faster while HEAT is
-   lit). One press spends the whole bar on a scripted brawl beat straight off the
-   Naruto-vs-Sasuke reference: a STANDOFF freeze, an explosive DASH-IN, a
-   machine-gun PUNCH FLURRY, then a single LAUNCH that yeets the victim clear
-   across the deck and 86's them over the rail into the bay with a WATER BURST.
-   Runs as a self-contained state machine in P._rageSeq, ticked by tickRage while
-   updatePlayer hands it the body. Bosses go over the rail too -- but only on the
-   killing blow: chip the landlord down, then a rage finish sails him off his own
-   terrace; a non-lethal one hits huge and shoves him toward the edge instead. */
+   ONE super per night: the meter charges on the clock (~60s into the fight), holds
+   at full until you spend it, and once used it's gone until the next night. One
+   press spends it on a scripted brawl beat straight off the Naruto-vs-Sasuke
+   reference: a STANDOFF freeze, an explosive DASH-IN, a machine-gun PUNCH FLURRY,
+   then a single LAUNCH that yeets the victim clear across the deck and 86's them
+   over the rail into the bay with a WATER BURST. Runs as a self-contained state
+   machine in P._rageSeq, ticked by tickRage while updatePlayer hands it the body.
+   EVERYONE goes over the rail -- bosses included: your one nightly rage can delete
+   Vince outright by launching him off his own terrace. */
 const RAGE_HITS=7;              // punches in the flurry
 const RAGE_FLURRY_IV=0.085;    // seconds between flurry punches (machine-gun cadence)
+const RAGE_CHARGE=60;          // seconds of night-fight to charge the ONE super you get per night
 function rageTarget(P){
   let t=(P.lockOn&&!P.lockOn.dead)?P.lockOn:null;
   if(!t){ let bd=1e9; for(const e of enemies){ if(e.dead||e._remove) continue;
@@ -6410,7 +6409,7 @@ function rageTarget(P){
 }
 function startRage(P){
   const tgt=rageTarget(P); if(!tgt) return false;          // nobody to rage on -> keep the meter, keep the button lit
-  P._rage=0; P._rageReady=false;
+  P._rage=0; P._rageReady=false; P._rageUsed=true;         // one and done: spent for the rest of the night
   P.attack=null; P.hold=null; P.slam=null; P.dodge=null; P.tackle=null; P.bufferedHeavy=null;
   P.iframe=Math.max(P.iframe,2.4);                          // untouchable through the whole cinematic
   const ang=Math.atan2(tgt.pos.x-P.pos.x, tgt.pos.z-P.pos.z);
@@ -6502,18 +6501,8 @@ function rageLaunch(P,tgt,ang){
   if(AC){ sfx.heavy(1); drum('kick',1,0.9); }
   popWord({x:cp.x,y:2.4,z:cp.z},"⚡ 86'D!",'#ffd23d',46);
   if(!tgt || tgt.dead || tgt._remove) return;
-  // BOSSES aren't exempt from the swim: a rage finish sends the landlord off his
-  // own terrace -- but only as the KILL. Chip him down first; a rage that lands the
-  // finishing blow yeets him over the rail (splash + all), while a non-lethal one
-  // still hits huge and hurls him toward the edge without ending the fight early.
-  if(tgt.boss){ tgt.hp-=140;
-    if(tgt.hp>0){                                           // survived -> massive stagger + a shove at the rail, stays in the fight
-      tgt.stagger=Math.max(tgt.stagger,1.3); tgt.hurt=1;
-      tgt.vel.x=Math.sin(ang)*14; tgt.vel.z=Math.cos(ang)*14; shake(0.6);
-      return;
-    }
-    tgt.hp=0;                                               // lethal -> fall through to the overboard sail below (killChef drives the death)
-  }
+  // EVERYONE goes over the rail -- the landlord included. Your one nightly rage can
+  // straight-up delete Vince by launching him off his own terrace into the bay.
   tgt._overboard={ x:Math.sin(ang), z:Math.cos(ang) }; tgt.pos.y=P.pos.y;   // sail flag: skips the arena clamp (see updateEnemy / resolveBodies)
   tgt.vel.x=Math.sin(ang)*22; tgt.vel.z=Math.cos(ang)*22;
   killChef(tgt, ang);
@@ -6944,6 +6933,8 @@ function startNight(cfg, onEnd){
   player.wpn=cfg.player&&cfg.player.wpn||'fists'; player.dur=WEAPONS[player.wpn].dur; equip(player.chef,player.wpn);
   player.dead=false; player.attack=null; player.dodge=null; player.lockOn=null;
   player.comboTarget=null; player.bufferedHeavy=null; player.bufferT=0;
+  player._rage=0; player._rageUsed=false; player._rageReady=false; player._rageSeq=null; player._rageCD=0;   // RAGE: one super per night, recharges fresh each night
+
   player.drinks=0; player.wastedT=0; player.drinkCD=0; player._drunk=0;   // start each night sober
   player.grabbed=null; hideMashUI(); grabCD=0; player.tackle=null; player.tackleCD=0;
   player.hold=null; player.grabCD=0; player.steal=null; player.slam=null; player.vy=0; player.pos.y=0; hideMashUI();
