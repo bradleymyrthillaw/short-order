@@ -3154,6 +3154,10 @@ function nearestEnemy(fromPos, facingYaw, cone){
    per-class tempo -- light flurries chain tight, heavies land on down-beats. */
 const ATK_SWING_MUL={ light:2.0, medium:1.8, heavy:1.5, shield:1.7 };
 const atkActive=(w,heavy)=>(0.08 + (w.heft==null?0.3:w.heft)*0.10)*(heavy?1.15:1);
+/* HEAT MODE: sustain a combo and the chef starts to SIZZLE -- swings ~22% faster
+   and the kitchen-tornado hits harder. A reward for staying aggressive that asks
+   for no precise input; it decays if you stop connecting. */
+const HEAT_ON=8, HEAT_DUR=3.0;
 /* rising windup WHOOSH on committed heavies: an audio telegraph scaled by heft --
    the weight is audible before it lands, and an enemy's heavy becomes reactable
    by ear, not just by eye. Pitch sweeps up across the windup; airy band on top. */
@@ -3166,7 +3170,8 @@ function startAttack(atk){ // atk shared by player/enemy: {heavy}
   const A=atk.actor, w=WEAPONS[atk.wpn];
   if(A.attack||A.stagger>0||A.dead||(A.dodge)) return false;
   if(atk.heavy && w.dur!==Infinity && A.dur<2 && A.wpn!=='fists'){ /* not enough for heavy; allow but will break */ }
-  const M=ATK_SWING_MUL[w.cls]||1.8, wind=w.wind*(atk.heavy?1.5:1)*M, active=atkActive(w,atk.heavy), rec=w.rec*(atk.heavy?1.3:1);
+  const heat=((A._heat||0)>0)?0.78:1;   // HEAT: the whole swing (windup+active+recovery) plays faster
+  const M=ATK_SWING_MUL[w.cls]||1.8, wind=w.wind*(atk.heavy?1.5:1)*M*heat, active=atkActive(w,atk.heavy)*heat, rec=w.rec*(atk.heavy?1.3:1)*heat;
   A.attack={ wpn:atk.wpn, heavy:atk.heavy, t:0, wind, active, rec, dur:wind+active+rec,
     hitAt:wind, hit:false, side:(A.comboStep%2===0)?1:-1,
     shape:(A.wpn==='fists'
@@ -3386,6 +3391,7 @@ function resolveHit(A, isPlayer){
   if(!landed && isPlayer){ sfx.whiff(); }
 }
 function addCombo(){ GAME.combo++; GAME.comboT=1.4; if(GAME.combo>GAME.maxCombo)GAME.maxCombo=GAME.combo;
+  if(GAME.combo>=HEAT_ON && player){ if(!((player._heat||0)>0)) popWord({x:player.pos.x,y:2.5,z:player.pos.z},'🔥 HEAT!','#ff6a1e',26); player._heat=HEAT_DUR; }
   const c=document.getElementById('combo'); const n=document.getElementById('comboN');
   if(GAME.combo>=2){ c.classList.add('on'); n.textContent=GAME.combo;
     n.animate([{transform:'scale(1.4)'},{transform:'scale(1)'}],{duration:180}); } }
@@ -3495,6 +3501,8 @@ function updatePlayer(dt, pad, actor){
   P.comboT=GAME.comboT; if(GAME.comboT>0){ GAME.comboT-=dt; if(GAME.comboT<=0){ GAME.combo=0;
     document.getElementById('combo').classList.remove('on'); } }
   P.weaveCD=Math.max(0,P.weaveCD-dt); P.dodgeCD=Math.max(0,P.dodgeCD-dt); P.chainT=Math.max(0,P.chainT-dt); P.tackleCD=Math.max(0,P.tackleCD-dt); P.jumpCD=Math.max(0,P.jumpCD-dt); P.slamHit=Math.max(0,P.slamHit-dt); P.grabCD=Math.max(0,P.grabCD-dt);
+  P._heat=Math.max(0,(P._heat||0)-dt); P._tornadoCD=Math.max(0,(P._tornadoCD||0)-dt);   // HEAT window + tornado cooldown
+  if((P._heat||0)>0 && (P._steamT=(P._steamT||0)-dt)<=0){ P._steamT=0.14; const sp=P.pos.clone(); sp.y=1.6+Math.random()*0.5; burst(sp,2,0xffe6c0,0.35); }   // sizzle steam
   // buffered-attack lifetime + combo-target upkeep (see beginSwing / the attack integrate)
   P.bufferT=Math.max(0,(P.bufferT||0)-dt); if(P.bufferT<=0) P.bufferedHeavy=null;
   P.parryT=Math.max(0,(P.parryT||0)-dt);                         // parry window countdown
@@ -3555,7 +3563,11 @@ function updatePlayer(dt, pad, actor){
   // inside it is deflected (no damage) and staggers the attacker wide open for a
   // counter -- rewarding a timed press over a passive hold-block. (See resolveHit.)
   const guardHeld = !COOKING && (pad.guard||(!REMOTE&&(KEY[' ']||TOUCH.guard))) && P.stagger<=0 && !P.attack && !P.dodge;
-  if(guardHeld && !P._guardPrev) P.parryT=PARRY_WINDOW;   // rising edge -> parry window
+  if(guardHeld && !P._guardPrev){ P.parryT=PARRY_WINDOW;   // rising edge -> parry window
+    // DOUBLE-TAP GUARD -> KITCHEN TORNADO (crowd-clear special, costs HP)
+    if(GAME.t-(P._lastGuardTap||-9) < 0.32){ if(kitchenTornado(P)) P._lastGuardTap=-9; }
+    else P._lastGuardTap=GAME.t;
+  }
   P._guardPrev=guardHeld;
   P.guard=guardHeld;
   P.guardV=damp(P.guardV, P.guard?1:0, 16, dt);
@@ -4871,6 +4883,7 @@ function poseChef(a, isPlayer, dt){
   // posing (feet IK, arm IK, pendulum) is retired (kept as poseChefOld for reference).
   const c=a.chef, u=c.userData;
   c.position.copy(a.pos); c.rotation.y=a.facing;
+  if((a._tornado||0)>0) c.rotation.y = a.facing + (0.5-a._tornado)*40;   // KITCHEN TORNADO: whirl the whole body
   if(!u || !u.mixRoot) return;                          // placeholder (skeleton not ready)
   if(a.dead){ if(a.rag){ ragTick(a, dt); ragApplySkel(a); } else if(a._mixer) a._mixer.update(dt);   // physics ragdoll (or death clip if the rig couldn't build one)
     updateLocs(a, dt); return; }   // dreads keep falling/swaying over the ragdoll
@@ -6055,6 +6068,32 @@ function throwWeapon(P){
   P.iframe=Math.max(P.iframe,0.18);
   shake(0.3); camKick(P.facing,0.35); if(AC) sfx.thud(0.6); haptic(0.5,0.5,90);
   const hp=P.pos.clone(); hp.y=1.5; popWord(hp, w.name.toUpperCase()+' THROW!', '#ffe03d', 22);
+}
+/* KITCHEN TORNADO: the surrounded-panic special every brawler has. A spinning
+   clear-out that knocks down everyone around you and costs a chunk of HP (so
+   it's a real trade, not a spam button). Double-tap GUARD to fire; only when a
+   crowd is actually in range. Hits harder while HEAT is up. */
+function kitchenTornado(P){
+  if(P.attack||P.hold||P.dodge||P.tackle||P.grabbed||P.steal||P.stagger>0||P.dead||GAME.mode!=='play') return false;
+  if((P._tornadoCD||0)>0 || P.hp<=15) return false;
+  let near=false; for(const e of enemies){ if(!e.dead && Math.hypot(e.pos.x-P.pos.x,e.pos.z-P.pos.z)<3.6){ near=true; break; } }
+  if(!near) return false;                                     // don't burn HP on empty air
+  P._tornadoCD=4.5; P._tornado=0.5; P.iframe=Math.max(P.iframe,0.55); P.attack=null;
+  P.hp=Math.max(1, P.hp-12); updateHUDHealth();
+  const R=3.4, hot=(P._heat||0)>0;
+  for(const e of enemies){ if(e.dead||e.boss) continue;
+    const d=Math.hypot(e.pos.x-P.pos.x,e.pos.z-P.pos.z); if(d>R) continue;
+    const ang=Math.atan2(e.pos.x-P.pos.x, e.pos.z-P.pos.z);
+    e.hp-=hot?28:18; e.vel.x+=Math.sin(ang)*11; e.vel.z+=Math.cos(ang)*11; e.stagger=Math.max(e.stagger,0.8);
+    if(e.hp<=0) killChef(e,ang); else knockDown(e,ang,1.3);
+  }
+  const bp=P.pos.clone(); bp.y=1.1;
+  ring(P.pos.clone(),COL.flame,R); ring(P.pos.clone(),0xffffff,R*0.7);
+  burst(bp,26,0xffb060,2.2); shake(0.9); hitstop(0.08);
+  POST.uniforms.uZoom.value=Math.max(POST.uniforms.uZoom.value,0.13);
+  if(AC){ sfx.heavy(1); } haptic(0.95,0.85,240);
+  popWord({x:P.pos.x,y:2.3,z:P.pos.z}, hot?'🔥 KITCHEN TORNADO!':'KITCHEN TORNADO!', '#ff6a1e', 30);
+  return true;
 }
 function tickThrown(dt){
   for(let i=THROWN.length-1;i>=0;i--){
