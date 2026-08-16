@@ -2497,10 +2497,23 @@ function popWord(worldPos, txt, col, size){
   setTimeout(()=>e.remove(),720);
 }
 /* screen shake + hitstop */
-const FX={ trauma:0, hitstop:0 };
+const FX={ trauma:0, hitstop:0, kx:0, kz:0, kmag:0, slowT:0 };
 function shake(a){ FX.trauma=Math.min(1.85,FX.trauma+a); }
+/* directional camera KICK: the lens lurches along the hit's direction and rolls
+   with it, so the camera reads the blow's force instead of only white-noise
+   rattling. Newer/bigger kicks steer the direction; magnitude accumulates. */
+function camKick(ang, amt){ const m=Math.min(1.2, amt||0); if(m<=0) return;
+  if(m>FX.kmag*0.6){ FX.kx=Math.sin(ang); FX.kz=Math.cos(ang); }
+  FX.kmag=Math.min(1.2, FX.kmag+m); }
 const _shl=new V3();
-function hitstop(t){ FX.hitstop=Math.max(FX.hitstop,t); }
+/* hitstop: with actors passed, ONLY those two freeze (Smash-style hitlag) -- the
+   rest of the crowd keeps moving, so per-hit freezes read as impact on the pair
+   instead of the whole room stuttering like a frame drop. With no actors it is
+   the old GLOBAL sim freeze, kept for the big cinematic thuds (ground pounds,
+   explosions, the shark) where the whole world catching its breath is the point. */
+function hitstop(t, a, b){
+  if(a||b){ if(a) a._stopT=Math.max(a._stopT||0, t); if(b) b._stopT=Math.max(b._stopT||0, t); return; }
+  FX.hitstop=Math.max(FX.hitstop,t); }
 /* squash-punch on a chef */
 function punchScale(chef,amt){ chef.userData._sq=amt; }
 
@@ -2576,7 +2589,15 @@ function haptic(strong, weak, ms){
   // was cut in half for mobile (ms*0.5) and passed magnitudes straight through
   // -- under-driving hardware that can take a lot more. Full duration now, and
   // both motors pushed up, so every connection actually THUMPS.
-  if(navigator.vibrate){ try{ navigator.vibrate(Math.round(ms)); }catch(e){} }
+  // MOBILE: the Vibration API has no amplitude, so weight must read as RHYTHM and
+  // onset, not length -- a flat half-second buzz outlasts the visual hit and feels
+  // like an alert, not an impact. Heavy hits: a sharp double-thump pattern; light
+  // hits: one crisp tap, capped ~90ms. (iOS Safari has no vibration at all -- there
+  // the shake/flash/zoom stack carries the hit.) Gamepads keep full duration below.
+  if(navigator.vibrate){ try{
+    if(strong>0.8) navigator.vibrate([18,30,42]);
+    else navigator.vibrate(Math.round(clamp(20+strong*70, 20, 90)));
+  }catch(e){} }
   const gp=GP._pad;
   if(gp && gp.vibrationActuator){ try{
     gp.vibrationActuator.playEffect('dual-rumble',{duration:ms,strongMagnitude:Math.min(1,strong*1.25),weakMagnitude:Math.min(1,weak*1.2)});
@@ -3252,7 +3273,7 @@ function resolveHit(A, isPlayer){
       knockDown(A, pang, 1.1); applyImpact(A, pang, 1.6);
       player.iframe=Math.max(player.iframe,0.35); player.parryT=0;   // consume the window
       const cp=new V3(lerp(origin.x,player.pos.x,0.5),1.4,lerp(origin.z,player.pos.z,0.5));
-      hitstop(0.14); shake(0.5); impactFrames(3,0xbfe0ff,0x0a1420); hitPost(0.75,0x7fb2d6);
+      hitstop(0.14, player, A); shake(0.5); impactFrames(3,0xbfe0ff,0x0a1420); hitPost(0.75,0x7fb2d6);
       burst(cp,15,0xbfe0ff,1.3); ring(cp,0xbfe0ff,1.6); if(AC) sfx.block(); haptic(0.7,0.5,150);
       popWord(cp,'PARRY!','#bfe0ff',30);
       continue;
@@ -3301,7 +3322,8 @@ function resolveHit(A, isPlayer){
     ring(cpos, w.metal?COL.cream:COL.flame, (1.0 + weight*1.7)*bw);
     if((weight>0.55 || finisher) && !blocked){ ring(cpos, 0xffffff, 1.5+weight); burst(cpos, 8, 0xffffff, 1.6+weight); }
     shake((0.22 + weight*1.5) * (0.65 + (w.shake||0.3)*0.6) * (finisher?1.25:1) * bw);   // chunkier -- and reads the weapon's AUTHORED shake so a cast-iron BONK out-kicks a spatula tink
-    hitstop(Math.min(0.22, 0.05 + weight*0.17) * (finisher?1.2:1) * (blocked?0.5:1));   // stop frames scale with weight but CAP at ~13f -- an uncapped heavy froze 20-25f, reading as a stall (and stacking dead time onto the combo-cancel, which waits out the freeze). the finisher down-beat runs a touch past the cap.
+    camKick(ang, (0.22 + weight*0.55) * (finisher?1.3:1) * bw);   // lens lurches along the blow
+    hitstop(Math.min(0.22, 0.05 + weight*0.17) * (finisher?1.2:1) * (blocked?0.5:1), A, T);   // hitlag on the PAIR only (crowd keeps moving); capped ~13f -- uncapped heavies froze 20-25f and stacked dead time onto the combo-cancel. the finisher down-beat runs a touch past the cap.
     const power=Math.min(1, weight*1.15) * bw;
     impactFrames(weight>0.75?4:(weight>0.45?3:(weight>0.2?2:1)), blocked?0x7fb2d6:(power>0.6?0xFFE03D:0xFFF6E3), 0x140c07);
     hitPost(power, blocked?0x7fb2d6:(w.metal?0xffe6a0:0xff6a1e));
@@ -3367,6 +3389,7 @@ function killChef(T, ang){
   T._toppleZ=rand(-0.5,0.5);
   buildRagdoll(T); if(T.rag) ragImpulse(T, _rp1.set(Math.sin(ang),0.15,Math.cos(ang)).normalize(), 1.0);
   const p=T.pos.clone(); p.y=1.2; burst(p,16,0xff3b30,1.3); shake(0.5); sfx.down();
+  FX.slowT=Math.max(FX.slowT,0.12);   // the finishing blow earns the slow-mo tail
   impactFrames(4, 0xff6a1e, 0x140c07); hitPost(0.8, 0xff6a1e); kitchenBump(0.6); haptic(0.7,0.5,140);
   popWord(p,pick(['DOWN','SENT HOME','COMPED','NO TIP FOR YOU','WALKED']),T.kind==='tough'?'#ff6a1e':'#f4e4c1',34);
   GAME.kills++;
@@ -3435,6 +3458,9 @@ function updateCOM(a){
 }
 function updatePlayer(dt, pad, actor){
   const P=actor||player; if(!P) return;
+  // per-actor HITLAG (see hitstop): this actor freezes solid for _stopT while the
+  // world runs on. The timer burns on real dt; everything below sees frozen time.
+  if(P._stopT>0){ P._stopT-=dt; if(P._stopT>0) dt*=0.0001; else P._stopT=0; }
   // co-op: an explicit second actor (P2 — remote Pocket or the ?coop=bot CPU)
   // is driven ONLY by its own pad; P1's keyboard/touch/mouse must not bleed in.
   const REMOTE = !!(actor && actor!==player);
@@ -3518,10 +3544,15 @@ function updatePlayer(dt, pad, actor){
   let weaveDir=0;
   if(Math.abs(rs.x)>0.5) weaveDir=rs.x>0?1:-1;
   if(!REMOTE){ if(tapK('e')) weaveDir=1; if(tapK('q')) weaveDir=-1; }   // reads stay unconditional (tracker freshness)
-  if(!COOKING && weaveDir!==0 && P.weaveCD<=0 && !P.attack && P.stagger<=0 && !P.dodge){   // day mode: E is the COOK key, not a combat slip -- pressing it must not shove the chef off the board
+  if(!COOKING && weaveDir!==0 && P.weaveCD<=0 && P.stagger<=0 && !P.dodge &&
+     (!P.attack || (P.attack.hit && P.attack.t >= P.attack.hitAt + P.attack.active*0.5))){   // day mode: E is the COOK key, not a combat slip -- pressing it must not shove the chef off the board
     // a hard lean/duck with real i-frames (0.32s) -- a defensive slip you can
     // use to duck under a swing and counter, not the tiny cosmetic sidestep it
     // was (0.22s / small lean). The lean amplitude is bumped in poseChef too.
+    // DEFENSIVE CANCEL: once this swing's hit has thrown (same gate as the combo-
+    // cancel), a weave slips OUT of the recovery -- aggression gets an exit, so
+    // committing to a swing doesn't mean eating the counter. Pre-hit stays locked.
+    if(P.attack){ P.attack=null; P.bufferedHeavy=null; P.bufferT=0; }
     P.weaveCD=0.4; P.iframe=Math.max(P.iframe,0.32); P._weave=weaveDir; P._weaveT=0.32;
     const side=camRight.clone().multiplyScalar(weaveDir*0.6); P.vel.addScaledVector(side,5.5);
     sfx.whiff();
@@ -3718,13 +3749,18 @@ function updatePlayer(dt, pad, actor){
     // a combo instead of leaving dead time between them. A lone swing (no buffer)
     // still rides to A.dur and settles, so a single hit keeps its full follow-through.
     // (chainT is still open here, so beginSwing advances the combo + stays locked on comboTarget.)
-    const canChain = A.hit && A.t >= A.hitAt + A.active*0.5;
+    // HEAVY = COMBO TERMINATOR (the !A.heavy gate): a light chains fast off the
+    // cancel, but a heavy never recovery-cancels -- its full follow-through IS the
+    // down-beat, so a string reads L-L-H, a breath, then the next string. A press
+    // queued during the heavy still fires at the settle below (input never eaten).
+    // (note: A.hit means "the hit FRAME fired", not "contact landed" -- whiffed
+    // lights open canChain at the same cancel point as connects.)
+    const canChain = A.hit && !A.heavy && A.t >= A.hitAt + A.active*0.5;
     if(canChain && P.bufferedHeavy!=null && P.bufferT>0){
       const h=P.bufferedHeavy; P.bufferedHeavy=null; P.bufferT=0; P.attack=null; beginSwing(h);
-    } else if(A.t>=A.dur){ P.attack=null; }
-    // (note: A.hit means "the hit FRAME fired", not "contact landed" -- so whiffed
-    // swings open canChain at the same cancel point as connects. No separate
-    // settle-flush is needed; a queued press always resolves through canChain.)
+    } else if(A.t>=A.dur){ P.attack=null;
+      if(P.bufferedHeavy!=null && P.bufferT>0){ const h=P.bufferedHeavy; P.bufferedHeavy=null; P.bufferT=0; beginSwing(h); }
+    }
   }
 
   // ----- SPRINT + STAMINA (Engine.move, see engine.js) -----
@@ -3862,6 +3898,8 @@ let _toScratch=null, _sepScratch=null;
 // normal play -- ?shot is never set there.
 if(typeof window!=='undefined' && window.FREEZE_MOBS===undefined) window.FREEZE_MOBS=false;   // real play: mobs live (set window.FREEZE_MOBS=true in the console to freeze for anim inspection)
 function updateEnemy(e, dt){
+  // per-actor HITLAG (see hitstop): the struck enemy freezes; the crowd keeps moving
+  if(e._stopT>0){ e._stopT-=dt; if(e._stopT>0) dt*=0.0001; else e._stopT=0; }
   // DEV/TEST: freeze living mobs in place -- they stand and idle-animate but
   // never chase, attack, grab, or shriek -- so the game can be walked around and
   // the animations inspected without taking damage. Toggle window.FREEZE_MOBS
@@ -4642,6 +4680,11 @@ function actionName(a){
     // the PLAYER keeps the two-hand combo; ENEMIES get the plain light/heavy sword swings
     const isP=a.chef&&a.chef.userData&&a.chef.userData.isPlayer;
     if(!isP) return a.attack.heavy ? 'atk_heavy' : 'atk_light';
+    // PER-WEAPON SILHOUETTES: the swing itself telegraphs the class. A thrust
+    // weapon's light is the quick straight strike; a heavy-class iron throws the
+    // big committed overhead on heavies. Everything else keeps the sword arc.
+    if(w.thrust) return a.attack.heavy ? mir(a,'atk_sword') : 'atk_light';   // knife: fast stab, heavy = full slash
+    if(w.cls==='heavy' && a.attack.heavy) return 'atk_heavy';                // cast iron / meat club overhead
     return mir(a,'atk_sword');
   }
   if(a._tossing) return MIXAMO.clips.throw?'throw':null;
@@ -8494,6 +8537,7 @@ function tick(){
   // hitstop freezes sim but not render
   let sdt=dt;
   if(FX.hitstop>0){ FX.hitstop-=dt; sdt=0.0001; }
+  else if(FX.slowT>0){ FX.slowT-=dt; sdt=dt*0.35; }   // KILL SLOW-MO: a short 0.35x decel tail punctuates a finishing blow -- reserved for kills so it stays a reward cue, never per-hit drag
 
   // co-op P2: drive the remote chef from the partner's pad (if in a session)
   if(window.coopClient) coopClient.tick(sdt);
@@ -8693,6 +8737,7 @@ function dayCamera(dt){
   if(camera.updateProjectionMatrix && Math.abs((camera.fov||DAYCAM.fov)-DAYCAM.fov)>0.01){ camera.fov=DAYCAM.fov; camera.updateProjectionMatrix(); }
   // trauma shake still reads (it decayed here but was never APPLIED in day)
   FX.trauma=Math.max(0,FX.trauma-dt*2.4);
+  FX.kmag=Math.max(0,FX.kmag-dt*6.5);   // kick decays in day too so it can't linger into the next night
   const sTr=FX.trauma*FX.trauma;
   camera.position.x+=(Math.random()-0.5)*sTr*0.5; camera.position.y+=(Math.random()-0.5)*sTr*0.4; camera.position.z+=(Math.random()-0.5)*sTr*0.5;
 }
@@ -8775,13 +8820,17 @@ function updateCamera(dt){
   { let _mix=1-Math.exp(-(7+3*k)*dt); _mix=Math.max(_mix, CAM.aimK*0.92);   // while aiming, follow near-rigidly so strafing pins the body in-frame (no drift)
     CAM.pos.lerp(want, _mix); }
   CAM.pos.x=clamp(CAM.pos.x,-mx,mx); CAM.pos.z=clamp(CAM.pos.z,-mz,mz);
-  // trauma shake
+  // trauma shake + directional KICK. The kick is a decaying lurch along the last
+  // hit's direction plus a roll bias below -- it carries the blow's vector, so the
+  // random jitter is dialed back (0.7 -> 0.55) without the hit reading softer.
   FX.trauma=Math.max(0,FX.trauma-dt*2.4);
-  const s=FX.trauma*FX.trauma;
+  FX.kmag=Math.max(0,FX.kmag-dt*6.5);
+  const s=FX.trauma*FX.trauma, kk=FX.kmag*FX.kmag;
   camera.position.copy(CAM.pos);
-  camera.position.x+=(Math.random()-0.5)*s*0.7;
-  camera.position.y+=(Math.random()-0.5)*s*0.55;
-  camera.position.z+=(Math.random()-0.5)*s*0.7;
+  camera.position.x+=FX.kx*kk*0.42; camera.position.z+=FX.kz*kk*0.42; camera.position.y-=kk*0.10;
+  camera.position.x+=(Math.random()-0.5)*s*0.55;
+  camera.position.y+=(Math.random()-0.5)*s*0.45;
+  camera.position.z+=(Math.random()-0.5)*s*0.55;
   // DRUNK: the room swims -- a slow woozy drift on the lens + aim, and a lazy roll
   const dk=P?(P._drunk||0):0, gt=GAME.t;
   if(dk>0.01){
@@ -8793,7 +8842,10 @@ function updateCamera(dt){
   _shl.x+=(Math.random()-0.5)*s*0.28; _shl.y+=(Math.random()-0.5)*s*0.24;   // jitter the aim too — reads as a harder hit
   if(dk>0.01){ _shl.x+=Math.sin(gt*0.7+2.0)*0.55*dk; _shl.z+=Math.cos(gt*0.6)*0.55*dk; }
   camera.lookAt(_shl);
-  camera.rotation.z+=(Math.random()-0.5)*s*0.095 + Math.sin(gt*0.8)*0.045*dk;   // slow drunken roll
+  // roll: random trauma component + a KICK-side bias (the view tips with the blow
+  // -- rotation reads as force without displacing the frame) + slow drunken roll
+  const kroll=(FX.kx*camRight.x + FX.kz*camRight.z)*kk*0.05;
+  camera.rotation.z+=(Math.random()-0.5)*s*0.095 + kroll + Math.sin(gt*0.8)*0.045*dk;
   camera.fov=lerp(camera.fov, 55 - 9*k2 + s*5, 1-Math.exp(-7*dt));   // zoom in on lock OR aim (tighter over-shoulder)
   camera.updateProjectionMatrix();
 }
