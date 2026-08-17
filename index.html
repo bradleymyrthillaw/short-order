@@ -9042,16 +9042,24 @@ function buildBarRoom(){
 let BAR_CROWD_N=44;   // patrons in the bar -- cheap instanced crowd, tune freely (holds 80+)
 const _CY=new V3(0,1,0), _cm=new THREE.Matrix4(), _cq=new THREE.Quaternion(), _cp=new V3(), _cs=new V3();
 const CROWD_SHIRTS=[0xff2fb0,0x2de2e6,0x2f6bff,0x9a4dff,0x36ff9a,0xff5d8f,0xffb020,0xff6a1e,0xef4e6b,0x4fd1c5,0xb388ff,0xffd24a];
-function crowdSpots(n){
-  const spots=[], BD=1.6, front=BARCTR.z+BD/2+0.85;
-  for(let i=-5;i<=5;i++) spots.push({x:i*1.05, z:front, face:Math.PI});                 // lined up along the bar
-  for(const s of SEATS) spots.push({x:s.x+rand(-0.35,0.35), z:s.z+0.75, face:0});        // around the cocktail tables
-  for(const px of [-7.5,0,7.5]) for(const o of [[-1.75,0],[1.75,0],[0,1.15]]) spots.push({x:px+o[0], z:-0.5+o[1], face:Math.atan2(-o[0],-o[1])});   // ringing the pool tables
+/* Placement CONGREGATES patrons into knots (the bar, each cocktail table, the
+   pool tables) plus a few dance-floor clumps, then sprinkles drifters. Each
+   patron carries a behaviour mode: 0=chat (sway + glance), 1=dance (bounce +
+   twist + weight-shift), 2=drift (slow local wander, facing where it moves). */
+function crowdPlacement(n){
+  const P=[], BD=1.6, zmin=BARCTR.z+1.6, zmax=9.0;
+  const push=(hx,hz,mode,face0,r)=>P.push({ hx:clamp(hx,-15,15), hz:clamp(hz,zmin,zmax), mode, face0, r:r==null?0.6:r,
+    phase:P.length*1.7, sx:0.9+Math.random()*0.25, sy:0.9+Math.random()*0.24 });
+  const clump=(cx,cz,count,mode,faceIn,spread)=>{ for(let i=0;i<count;i++){ const a=Math.random()*TAU, rr=Math.sqrt(Math.random())*spread,
+    hx=cx+Math.cos(a)*rr, hz=cz+Math.sin(a)*rr; push(hx,hz,mode, faceIn?Math.atan2(cx-hx,cz-hz):rand(0,TAU)); } };
+  for(let i=-5;i<=5;i++) push(i*1.05, BARCTR.z+BD/2+0.95, 0, Math.PI, 0.35);   // elbows on the bar
+  for(const s of SEATS) clump(s.x, s.z, 2, 0, true, 0.85);                     // knots at the cocktail tables
+  for(const px of [-7.5,0,7.5]) clump(px, -0.5, 3, 0, true, 1.9);              // watching the pool
+  for(const dc of [[-10.5,5.5],[10.5,5.5],[0,7.0]]) clump(dc[0],dc[1], 7, 1, false, 1.7);   // dance-floor clumps
   let guard=0;
-  while(spots.length<n && guard++<600){ const x=rand(-14.5,14.5), z=rand(BARCTR.z+2.0,8.6);   // rest mill on the open floor (never in the bar pit)
-    spots.push({x,z,face:rand(0,TAU)}); }
-  while(spots.length<n) spots.push({x:rand(-14.5,14.5),z:rand(-3,8.6),face:rand(0,TAU)});
-  return spots.slice(0,n);
+  while(P.length<n && guard++<1000){ const dance=Math.random()<0.45;
+    push(rand(-13,13), rand(zmin,zmax-0.4), dance?1:2, rand(0,TAU), 0.5+Math.random()*0.9); }   // the rest: dancers + drifters
+  return P.slice(0,n);
 }
 function buildBarCrowd(n){
   if(!barRoom) return;
@@ -9061,11 +9069,9 @@ function buildBarCrowd(n){
   const bodies=new THREE.InstancedMesh(bodyGeo, new THREE.MeshStandardMaterial({roughness:.65,metalness:.05}), n);
   const heads =new THREE.InstancedMesh(headGeo, new THREE.MeshStandardMaterial({color:0x2a2230,roughness:.7}), n);
   bodies.castShadow=heads.castShadow=false; bodies.frustumCulled=heads.frustumCulled=false;
-  const spots=crowdSpots(n), data=[], col=new THREE.Color();
-  for(let i=0;i<n;i++){ const sp=spots[i];
-    const d={ x:sp.x, z:sp.z, face:sp.face+rand(-0.25,0.25), phase:i*1.9, sway:0.5+Math.random()*0.8, sx:0.9+Math.random()*0.25, sy:0.92+Math.random()*0.22 };
-    data.push(d);
-    _cp.set(d.x,0,d.z); _cq.setFromAxisAngle(_CY,d.face); _cs.set(d.sx,d.sy,d.sx); _cm.compose(_cp,_cq,_cs);
+  const data=crowdPlacement(n), col=new THREE.Color();
+  for(let i=0;i<n;i++){ const d=data[i];
+    _cp.set(d.hx,0,d.hz); _cq.setFromAxisAngle(_CY,d.face0); _cs.set(d.sx,d.sy,d.sx); _cm.compose(_cp,_cq,_cs);
     bodies.setMatrixAt(i,_cm); heads.setMatrixAt(i,_cm);
     col.setHex(CROWD_SHIRTS[i%CROWD_SHIRTS.length]); bodies.setColorAt(i,col);
   }
@@ -9076,9 +9082,21 @@ function buildBarCrowd(n){
 function tickBarCrowd(dt){
   const c=barRoom&&barRoom.visible&&barRoom.userData.crowd; if(!c) return;
   const t=GAME.t, B=c.bodies, H=c.heads, data=c.data;
-  for(let i=0;i<c.n;i++){ const d=data[i];
-    const bob=Math.sin(t*2.1+d.phase)*0.045, sway=Math.sin(t*1.25+d.phase*0.7)*0.11*d.sway;
-    _cp.set(d.x,bob,d.z); _cq.setFromAxisAngle(_CY,d.face+sway); _cs.set(d.sx,d.sy,d.sx); _cm.compose(_cp,_cq,_cs);
+  for(let i=0;i<c.n;i++){ const d=data[i]; let x=d.hx, z=d.hz, y=0, face=d.face0, sxp=d.sx, syp=d.sy;
+    if(d.mode===1){                                       // DANCE in place: bounce + twist + weight-shift + squash
+      const b=Math.abs(Math.sin(t*3.4+d.phase));
+      y=b*0.15; face=d.face0+Math.sin(t*2.5+d.phase)*0.5; x+=Math.sin(t*2.0+d.phase)*0.07;
+      syp=d.sy*(1+b*0.11); sxp=d.sx*(1-b*0.06);
+    } else if(d.mode===2){                                // DRIFT: slow local wander, facing the drift
+      const w=0.33, A=d.r;
+      x+=A*Math.sin(w*t+d.phase)+A*0.4*Math.sin(0.19*t+d.phase*1.7);
+      z+=A*Math.cos(w*t+d.phase*1.1)+A*0.4*Math.cos(0.15*t+d.phase*1.3);
+      face=Math.atan2(A*w*Math.cos(w*t+d.phase), -A*w*Math.sin(w*t+d.phase*1.1));
+      y=Math.abs(Math.sin(t*5.0+d.phase))*0.035;
+    } else {                                              // CHAT: small sway + the odd glance
+      y=Math.sin(t*1.5+d.phase)*0.03; face=d.face0+Math.sin(t*0.55+d.phase)*0.16;
+    }
+    _cp.set(x,y,z); _cq.setFromAxisAngle(_CY,face); _cs.set(sxp,syp,sxp); _cm.compose(_cp,_cq,_cs);
     B.setMatrixAt(i,_cm); H.setMatrixAt(i,_cm);
   }
   B.instanceMatrix.needsUpdate=true; H.instanceMatrix.needsUpdate=true;
