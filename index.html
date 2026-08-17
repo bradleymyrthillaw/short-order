@@ -3167,10 +3167,10 @@ function resolveBodies(){
       if(Math.abs((a.pos.y||0)-(b.pos.y||0)) > 0.9) continue;   // one is airborne OVER the other -- jump/dive across them, don't get shoved off
       let dx=b.pos.x-a.pos.x, dz=b.pos.z-a.pos.z;
       if(dx<=-1.5||dx>=1.5||dz<=-1.5||dz>=1.5) continue;   // per-axis reject: max combined radius ~1.28, no sqrt needed for far pairs
-      const d=Math.hypot(dx,dz);
+      let d=Math.hypot(dx,dz);
       const min=(a.r||0.34)+(b.r||0.34) + BODY_PAD*2;
       if(d>=min) continue;
-      if(d<1e-4){ dx=Math.cos(i*2.4+j); dz=Math.sin(i*2.4+j); d=1; }   // exact overlap: split along a stable direction
+      if(d<1e-4){ dx=Math.cos(i*2.4+j); dz=Math.sin(i*2.4+j); d=1; }   // exact overlap: split along a stable direction (d reassigned -> must be let)
       const overlap=min-d; dx/=d; dz/=d;
       const aw=bodyGive(a), bw=bodyGive(b), s=aw+bw||1;
       a.pos.x-=dx*overlap*(aw/s); a.pos.z-=dz*overlap*(aw/s);
@@ -3362,8 +3362,14 @@ function resolveHit(A, isPlayer){
       // Every clean hit on an ENEMY makes them stumble -- knockback + a stagger
       // floor -- so the mob reels off each blow. Player-dealt only; a boss is exempt.
       if(isPlayer && !blocked){ T.stagger=Math.max(T.stagger, heavy?0.6:0.42); kb*=1.5; }
-      // FLATTEN (giant rolling pin): a clean hit pancakes them into a long stun
-      if(w.flatten && isPlayer && !blocked){ T.stagger=Math.max(T.stagger,2.2); T._flatT=2.2; T.chef.scale.y=0.45; T.chef.scale.x=T.chef.scale.z=1.25; }
+      // GIANT ROLLING PIN: a LIGHT hit pancakes them (flatten stun); a HEAVY is a
+      // home-run LAUNCH -- every clean heavy sends them flying (the _thrown skid that
+      // bowls over whoever's behind), no HP gate. A killing blow ragdolls as usual.
+      if(w.flatten && isPlayer && !blocked){
+        if(heavy && T.hp>0){ T._thrown={t:0.6, ang}; T._thrownHit=null; T.stagger=Math.max(T.stagger,0.9);
+          ring(cpos,0xffffff,2.0); popWord({x:T.pos.x,y:1.9,z:T.pos.z},'LAUNCH!','#ffe6a0',24); }
+        else { T.stagger=Math.max(T.stagger,2.2); T._flatT=2.2; T.chef.scale.y=0.45; T.chef.scale.x=T.chef.scale.z=1.25; }
+      }
       // FROST (meat club): chill the mob into a slow crawl
       if(w.frost && isPlayer && !blocked){ T._frostT=2.5; T.spd=Math.min(T.spd, T._baseSpd||T.spd)*0.5; }
       // SPIN (floor buffer): light hits, but a wide constant knockback
@@ -3380,7 +3386,7 @@ function resolveHit(A, isPlayer){
     applyImpact(T, ang, (heavy?1.4:0.85)*(blocked?0.4:1)*Emul, 1.4, weight);
     // HEAVY KNOCKDOWN: a decisive heavy blow floors them -- a hefty weapon on its
     // own, or any heavy that follows up an already-reeling foe. Not on a kill/block.
-    if(isPlayer && heavy && !blocked && T.hp>0 && (weight>0.6 || preStag>0.45)) knockDown(T, ang, 1.1);
+    if(isPlayer && heavy && !blocked && T.hp>0 && !w.flatten && (weight>0.6 || preStag>0.45)) knockDown(T, ang, 1.1);   // rolling pin heavy LAUNCHES instead of flooring (handled above)
     // weapon BITE: the attacker's blade jolts back on contact instead of sailing
     // through -- a short recoil kick on the weaponGroup (integrated in poseChef)
     if(!blocked){ A._biteV = (A._biteV||0) - (0.7 + weight*1.5); }
@@ -4655,6 +4661,15 @@ const ATK_STRIKE_FRAC={ atk_light:0.46, atk_heavy:0.49, atk_bat:0.19,
   default:0.5 };
 // left-handed (male chef) picks the mirrored (_L) clip when one exists
 function mir(a,name){ return (a&&a.chef&&a.chef.userData&&a.chef.userData.whand===0 && MIXAMO.clips[name+'_L']) ? name+'_L' : name; }
+// ALTERNATE a swing's side on each successive strike, so mashing reads as a real
+// back-and-forth (right, left, right...) instead of the same swing on repeat. Uses
+// the baked _L mirror when it exists; falls back to the plain handedness pick.
+function altSwing(a,name){
+  if(!MIXAMO.clips[name+'_L']) return mir(a,name);
+  const lh = a&&a.chef&&a.chef.userData&&a.chef.userData.whand===0;   // left-handed carry opens on the L side
+  const odd = ((((a&&a._comboIdx)||0))%2)===1;
+  return (odd!==lh) ? name+'_L' : name;
+}
 // move direction relative to facing -> '' (fwd) / '_b' / '_l' / '_r'
 function moveDirSuffix(a){ const vx=a.vel?a.vel.x:0, vz=a.vel?a.vel.z:0; if(Math.hypot(vx,vz)<0.2) return '';
   const f=a.facing||0, fwd=vx*Math.sin(f)+vz*Math.cos(f), side=vx*Math.cos(f)-vz*Math.sin(f);
@@ -5012,7 +5027,7 @@ function actionName(a){
     // UNARMED ONLY: bare hands throw the punch combos (light + heavy pools)
     if(wk==='fists'||!wk){ const pool=(a.attack.heavy||w.cls==='heavy'||w.cls==='medium')?HEAVY_COMBOS:LIGHT_COMBOS; return mir(a, pool[ci%pool.length]); }
     // WEAPON-SPECIFIC SWINGS (whoever's holding it)
-    if(wk==='rollingpin') return 'atk_bat';                    // rolling pin = the baseball swing
+    if(wk==='rollingpin') return a.attack.heavy ? 'atk_bat' : altSwing(a,'atk_sword');   // heavy = the big baseball LAUNCH swing; light = a back-and-forth two-hander
     if(wk==='potlid')     return mir(a,'atk_shield');          // pot lid = sword-and-shield
     // the PLAYER keeps the two-hand combo; ENEMIES get the plain light/heavy sword swings
     const isP=a.chef&&a.chef.userData&&a.chef.userData.isPlayer;
@@ -5022,7 +5037,7 @@ function actionName(a){
     // big committed overhead on heavies. Everything else keeps the sword arc.
     if(w.thrust) return a.attack.heavy ? mir(a,'atk_sword') : 'atk_light';   // knife: fast stab, heavy = full slash
     if(w.cls==='heavy' && a.attack.heavy) return 'atk_heavy';                // cast iron / meat club overhead
-    return mir(a,'atk_sword');
+    return altSwing(a,'atk_sword');                                          // most weapons: swing alternates side each strike (mash = back-and-forth)
   }
   if(a._tossing) return MIXAMO.clips.throw?'throw':null;
   if(a.dodge) return (a._dodgeSign<0 && MIXAMO.clips.dodge_r)?'dodge_r':'dodge';
