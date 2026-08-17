@@ -6790,6 +6790,7 @@ function playerDown(){
   impactFrames(4, 0xff3b30, 0x140c07); hitPost(0.9, 0xff3b30);
   buildRagdoll(player); if(player.rag) ragImpulse(player, _rp1.set(-Math.sin(player.facing),0.2,-Math.cos(player.facing)).normalize(), 1.1);
   const p=player.pos.clone(); p.y=1.2; popWord(p,"86'D",'#ff3b30',46);
+  if(GAME.barFight){ setTimeout(()=>barLoseNight(),1200); return; }   // dropped in the bar: last call, not a game over
   setTimeout(()=>endNight(false),900);
 }
 
@@ -6930,7 +6931,7 @@ function maybeSpawnWave(){
    onEnd(result): result = { survived:bool, kills, maxCombo, wpn } */
 function startNight(cfg, onEnd){
   // clear
-  GAME.toBar=false; AFTER.postBrawl=false;                                   // fresh night: not in the bar-transition
+  GAME.toBar=false; GAME.barFight=false; AFTER.postBrawl=false; AFTER.fighting=false;   // fresh night: not in the bar-transition/scrap
   if(arena.userData.barDoors) arena.userData.barDoors.visible=false;
   { const bf=document.getElementById('barfade'); if(bf){ bf.style.transition='none'; bf.style.opacity='0'; } }
   for(const e of enemies) scene.remove(e.chef); enemies.length=0;
@@ -9053,8 +9054,18 @@ const CROWD_SHIRTS=[0xff2fb0,0x2de2e6,0x2f6bff,0x9a4dff,0x36ff9a,0xff5d8f,0xffb0
    twist + weight-shift), 2=drift (slow local wander, facing where it moves). */
 function crowdPlacement(n){
   const P=[], BD=1.6, zmin=BARCTR.z+1.6, zmax=11.0;
-  const push=(hx,hz,mode,face0,r)=>P.push({ hx:clamp(hx,-15,15), hz:clamp(hz,zmin,zmax), mode, face0, r:r==null?0.6:r,
-    phase:P.length*1.7, sx:0.9+Math.random()*0.25, sy:0.9+Math.random()*0.24 });
+  // FLEE target: project each patron from the room centre onto the inner
+  // perimeter (side walls, front wall, front-of-bar) so a fight OPENS A CLEAR
+  // RING in the middle -- everyone backs up against a wall to watch.
+  const CX=0, CZ=3.0, XL=-15.8, XR=15.8, ZB=-3.4, ZF=11.2;
+  const push=(hx,hz,mode,face0,r)=>{ hx=clamp(hx,-15,15); hz=clamp(hz,zmin,zmax);
+    let dx=hx-CX, dz=hz-CZ; const L=Math.hypot(dx,dz)||1; dx/=L; dz/=L;
+    let t=Infinity;
+    if(dx>1e-3) t=Math.min(t,(XR-CX)/dx); else if(dx<-1e-3) t=Math.min(t,(XL-CX)/dx);
+    if(dz>1e-3) t=Math.min(t,(ZF-CZ)/dz); else if(dz<-1e-3) t=Math.min(t,(ZB-CZ)/dz);
+    if(!isFinite(t)) t=6;
+    P.push({ hx, hz, mode, face0, r:r==null?0.6:r, phase:P.length*1.7, sx:0.9+Math.random()*0.25, sy:0.9+Math.random()*0.24,
+      ex:CX+dx*t, ez:CZ+dz*t }); };
   const clump=(cx,cz,count,mode,faceIn,spread)=>{ for(let i=0;i<count;i++){ const a=Math.random()*TAU, rr=Math.sqrt(Math.random())*spread,
     hx=cx+Math.cos(a)*rr, hz=cz+Math.sin(a)*rr; push(hx,hz,mode, faceIn?Math.atan2(cx-hx,cz-hz):rand(0,TAU)); } };
   for(let i=-5;i<=5;i++) push(i*1.05, BARCTR.z+BD/2+0.95, 0, Math.PI, 0.35);   // elbows on the bar
@@ -9086,21 +9097,25 @@ function buildBarCrowd(n){
 }
 function tickBarCrowd(dt){
   const c=barRoom&&barRoom.visible&&barRoom.userData.crowd; if(!c) return;
-  const t=GAME.t, B=c.bodies, H=c.heads, data=c.data;
-  for(let i=0;i<c.n;i++){ const d=data[i]; let x=d.hx, z=d.hz, y=0, face=d.face0, sxp=d.sx, syp=d.sy;
+  c.fleeK = damp(c.fleeK||0, c.flee?1:0, 3, dt);   // eases to the edges when a fight breaks out, back when it clears
+  const t=GAME.t, B=c.bodies, H=c.heads, data=c.data, k=c.fleeK, idle=1-k*0.85;
+  for(let i=0;i<c.n;i++){ const d=data[i];
+    const hx = k>0.002 ? lerp(d.hx,d.ex,k) : d.hx, hz = k>0.002 ? lerp(d.hz,d.ez,k) : d.hz;
+    let x=hx, z=hz, y=0, face=d.face0, sxp=d.sx, syp=d.sy;
     if(d.mode===1){                                       // DANCE in place: bounce + twist + weight-shift + squash
       const b=Math.abs(Math.sin(t*3.4+d.phase));
-      y=b*0.15; face=d.face0+Math.sin(t*2.5+d.phase)*0.5; x+=Math.sin(t*2.0+d.phase)*0.07;
-      syp=d.sy*(1+b*0.11); sxp=d.sx*(1-b*0.06);
+      y=b*0.15*idle; face=d.face0+Math.sin(t*2.5+d.phase)*0.5*idle; x+=Math.sin(t*2.0+d.phase)*0.07*idle;
+      syp=d.sy*(1+b*0.11*idle); sxp=d.sx*(1-b*0.06*idle);
     } else if(d.mode===2){                                // DRIFT: slow local wander, facing the drift
-      const w=0.33, A=d.r;
+      const w=0.33, A=d.r*idle;
       x+=A*Math.sin(w*t+d.phase)+A*0.4*Math.sin(0.19*t+d.phase*1.7);
       z+=A*Math.cos(w*t+d.phase*1.1)+A*0.4*Math.cos(0.15*t+d.phase*1.3);
       face=Math.atan2(A*w*Math.cos(w*t+d.phase), -A*w*Math.sin(w*t+d.phase*1.1));
       y=Math.abs(Math.sin(t*5.0+d.phase))*0.035;
     } else {                                              // CHAT: small sway + the odd glance
-      y=Math.sin(t*1.5+d.phase)*0.03; face=d.face0+Math.sin(t*0.55+d.phase)*0.16;
+      y=Math.sin(t*1.5+d.phase)*0.03*idle; face=d.face0+Math.sin(t*0.55+d.phase)*0.16*idle;
     }
+    if(k>0.5) face=Math.atan2(0-x, 3.0-z);                // backed up against the wall, rubbernecking the scrap
     _cp.set(x,y,z); _cq.setFromAxisAngle(_CY,face); _cs.set(sxp,syp,sxp); _cm.compose(_cp,_cq,_cs);
     B.setMatrixAt(i,_cm); H.setMatrixAt(i,_cm);
   }
@@ -9198,7 +9213,9 @@ function goThroughDoors(){
   });
 }
 function startBarService(){
-  GAME.mode='after'; AFTER.on=true; AFTER.postBrawl=true;
+  GAME.mode='after'; AFTER.on=true; AFTER.postBrawl=true; AFTER.fighting=false; GAME.barFight=false;
+  for(const e of enemies) scene.remove(e.chef); enemies.length=0;   // leave the brawl's corpses on the terrace, not in the bar
+  buildBarCrowd(clamp(Math.round(30+beli()*22),40,280));   // busier the better your Beli rating
   AFTER.t=60; AFTER.cash=0; AFTER.bottles=0; AFTER.heat=0; AFTER.riot=false; AFTER.spawnT=1.0;
   for(const grp of AFTER.groups){ if(grp.g) scene.remove(grp.g); if(grp.mark) scene.remove(grp.mark); } AFTER.groups.length=0;
   if(player){ player.wpn='fists'; player.dur=Infinity; equip(player.chef,'fists'); player.attack=null; player.hold=null; player.dead=false; }
@@ -9220,10 +9237,64 @@ function exitBarToMorning(){
     barFade(false, 520);
   });
 }
+/* ============ BAR FIGHTS: when the room's HEAT maxes out during bottle service a
+   brawl kicks off right here in the bar. The crowd scatters to the walls to watch
+   (crowd.flee). A LOW Beli rating = a rougher room = a bigger scrap. Clear it and
+   the party's back on; go down and it's last call -> straight to the morning. */
+function startBarBrawl(){
+  if(GAME.barFight) return;
+  AFTER.fighting=true; GAME.barFight=true; GAME.mode='play';
+  const c=barRoom&&barRoom.userData.crowd; if(c) c.flee=true;               // patrons back up to the edges to watch
+  for(const g of AFTER.groups){ if(g.g) scene.remove(g.g); if(g.mark) scene.remove(g.mark); } AFTER.groups.length=0;
+  for(const e of enemies) scene.remove(e.chef); enemies.length=0;           // clear any lingering corpses so the count is exact
+  DAY.carry=null; updateCarryMesh();
+  // brawler count scales UP as the rating drops: a 2-Beli dive throws a proper mob
+  const n=clamp(Math.round(3+(7-beli())*0.9),2,9);
+  // pin the wave system to a single, already-complete wave so nothing re-spawns mid-scrap
+  WAVE.chunks=[[]]; WAVE.wave=0; WAVE.total=n; WAVE.spawned=n; WAVE.queue=[];
+  WAVE.waveDone=true; WAVE.done=true; WAVE.resting=false; WAVE.pending=0; WAVE.winT=0;
+  NIGHT_ROSTER=null;
+  for(let i=0;i<n;i++) spawnEnemy(i%4===3?'tough':'weak');
+  if(player){ player.hp=player.hpMax; player.dead=false; player.attack=null; player.hold=null;
+    player.wpn='fists'; player.dur=Infinity; equip(player.chef,'fists'); }
+  document.body.classList.remove('cookmode');                               // swap the touch UI to combat
+  const dh=document.getElementById('dayhud'); if(dh) dh.classList.remove('on');
+  document.getElementById('hud').classList.add('on');
+  if(TOUCHCAP){ touchEl.classList.add('on'); if(bPause) bPause.classList.add('on'); }
+  updateHUDHealth(); updateHUDWeapon(); updateHUDCooks(n);
+  toast('🍸 IT’S KICKING OFF — CLEAR THE ROOM!'); shake(0.9); if(AC){ sfx.thud(0.8); drum('crash',0.9); }
+}
+function endBarBrawl(won){
+  GAME.barFight=false; AFTER.fighting=false; WAVE.winT=0;
+  for(const e of enemies) scene.remove(e.chef); enemies.length=0;
+  const c=barRoom&&barRoom.userData.crowd; if(c) c.flee=false;              // crowd flows back off the walls
+  GAME.mode='after'; AFTER.on=true; AFTER.postBrawl=true;
+  AFTER.heat=0.25; AFTER.riot=false; AFTER.t=Math.max(AFTER.t,18); AFTER.spawnT=1.0;   // fresh breathing room to keep serving
+  if(player){ player.hp=Math.max(player.hp, player.hpMax*0.6); player.dead=false; player.attack=null; player.hold=null;
+    player.wpn='fists'; player.dur=Infinity; equip(player.chef,'fists'); }
+  document.body.classList.add('cookmode');                                  // touch UI back to service
+  const dh=document.getElementById('dayhud'); if(dh) dh.classList.add('on');
+  document.getElementById('hud').classList.remove('on');
+  toast('🍾 ROOM CLEARED — party’s back on. bottles at the bar.'); if(AC){ sfx.pickup(); drum('ride',0.8); }
+}
+function barLoseNight(){
+  GAME.barFight=false; AFTER.fighting=false; AFTER.on=false;
+  const cash=AFTER.cash; RUN.bank+=cash; saveRun();                         // keep what you banked before it kicked off
+  for(const e of enemies) scene.remove(e.chef); enemies.length=0;
+  barFade(true, 560, ()=>{
+    document.body.classList.remove('cookmode');
+    const dh=document.getElementById('dayhud'); if(dh) dh.classList.remove('on');
+    exitBarRoom();
+    if(player){ player.dead=false; resetRagPose(player); }
+    AFTER.postBrawl=false; ended=false; endNight(true);                     // survived the night, just lost the scrap -> morning
+    if(cash>0) toast('bottles banked $'+cash+' before it kicked off');
+    barFade(false, 560);
+  });
+}
 /* ============ AFTER HOURS (chez P3): bottle service on the last two nights of the week.
    Beli runs the room -- demand, what the crowd pays per bottle, and how fast trouble builds.
    Ignored tables and chuggers add HEAT; full heat = a riot rolls straight into the brawl. */
-const AFTER={ on:false, t:0, cash:0, bottles:0, heat:0, groups:[], spawnT:2, riot:false };
+const AFTER={ on:false, t:0, cash:0, bottles:0, heat:0, groups:[], spawnT:2, riot:false, fighting:false, postBrawl:false };
 function afterDow(){ return (RUN.day-1)%WEEK_DAYS; }
 function afterTonight(){ return afterDow()>=WEEK_DAYS-2; }        // the week's last two days
 function nightDemand(){ return Math.max(0.35, Math.min(1.4, 0.40+0.12*(beli()-2))); }
@@ -9293,7 +9364,9 @@ function updateAfter(dt){
       if(g.patience<=0){ AFTER.heat=Math.min(1,AFTER.heat+0.14); toast('a table walked. heat rising.');
         if(g.mark) scene.remove(g.mark); scene.remove(g.g); AFTER.groups.splice(i,1); } }
     else if(g.state==='party'){ g.linger-=dt; if(g.linger<=0){ if(g.mark) scene.remove(g.mark); scene.remove(g.g); AFTER.groups.splice(i,1); } } }
-  if(AFTER.heat>=1 && !AFTER.riot){ AFTER.riot=true; AFTER.t=Math.min(AFTER.t,1.5); toast('IT’S KICKING OFF.'); shake(0.8); }
+  if(AFTER.heat>=1 && !AFTER.riot){ AFTER.riot=true;
+    if(AFTER.postBrawl && barRoom && barRoom.visible){ startBarBrawl(); return; }   // in the bar: a real fight breaks out
+    AFTER.t=Math.min(AFTER.t,1.5); toast('IT’S KICKING OFF.'); shake(0.8); }
   // day HUD chips double as the after-hours readout
   const dr=document.getElementById('drun');
   if(dr) dr.innerHTML='<b>AFTER HOURS</b> &nbsp; '+Math.max(0,AFTER.t).toFixed(0)+'s &nbsp; BANKED <b>$'+AFTER.cash+'</b>'+
@@ -9594,7 +9667,13 @@ function tick(){
     // reap
     for(let i=enemies.length-1;i>=0;i--) if(enemies[i]._remove) enemies.splice(i,1);
     // win: all waves spawned and nobody left standing (frame-timed so it can't be missed)
-    if(!ended && !GAME.toBar && WAVE.done && enemies.every(e=>e.dead)){
+    if(GAME.barFight){
+      if(barRoom){ arena.visible=false; barRoom.visible=true; }             // hold the bar view through the scrap
+      if(!ended && enemies.length && enemies.every(e=>e.dead)){
+        WAVE.winT=(WAVE.winT||0)+dt;
+        if(WAVE.winT>0.7) endBarBrawl(true);                                // room cleared -> back to the party
+      } else WAVE.winT=0;
+    } else if(!ended && !GAME.toBar && WAVE.done && enemies.every(e=>e.dead)){
       WAVE.winT=(WAVE.winT||0)+dt;
       if(WAVE.winT>0.7){ if(barEligible()) beginToBar(); else endNight(true); }   // survived -> head to the bar (else straight to morning, e.g. Vince)
     } else if(!GAME.toBar) WAVE.winT=0;
@@ -9676,7 +9755,7 @@ function tick(){
     yellowSpark.position.set(Math.cos(GAME.t*0.63)*6, 2.2, Math.sin(GAME.t*0.44)*4.5);
     yellowSpark.intensity=0.85+Math.sin(GAME.t*4.7+1.7)*0.35;
   }
-  tickBarCrowd();                 // instanced bar crowd idle (no-op unless the bar is up)
+  tickBarCrowd(dt);               // instanced bar crowd idle (no-op unless the bar is up)
   renderFrame();
 }
 
