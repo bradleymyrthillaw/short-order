@@ -9155,7 +9155,7 @@ function barFade(toBlack, ms, cb){
 }
 function buildBarDoors(){
   if(arena.userData.barDoors) return arena.userData.barDoors;
-  const g=new THREE.Group(); g.position.set(0,0,-HALFD+0.35); g.visible=false; arena.add(g); arena.userData.barDoors=g;
+  const g=new THREE.Group(); g.position.set(-9,0,-HALFD+0.4); g.visible=false; arena.add(g); arena.userData.barDoors=g;   // back-LEFT, clear of the pass
   const H=3.0, Wd=2.6, frameMat=dmat(0x241018,.6,.08), doorMat=dmat(0x3a1020,.55,.1);
   const glow=new THREE.MeshStandardMaterial({color:0xff2fb0,emissive:0xff2fb0,emissiveIntensity:1.7});
   for(const px of [-Wd/2-0.15, Wd/2+0.15]){ const post=new THREE.Mesh(new THREE.BoxGeometry(0.3,H,0.3),frameMat); post.position.set(px,H/2,0); g.add(post);
@@ -9167,8 +9167,10 @@ function buildBarDoors(){
     const pan=new THREE.Mesh(new THREE.BoxGeometry(Wd/2,H-0.2,0.12),doorMat); pan.position.set(-sign*Wd/4,H/2-0.1,0); lp.add(pan);
     const win=new THREE.Mesh(new THREE.BoxGeometry(Wd/2-0.35,0.95,0.04),winMat); win.position.set(-sign*Wd/4,H-1.05,0.07); lp.add(win); return lp; }
   g.userData.lp=leaf(-1); g.userData.rp=leaf(1);
-  const sign=_neonPanel('THE BAR', 3.0, 0.8, '#2de2e6'); sign.position.set(0,H+0.75,0.22); g.add(sign);
-  const beam=new THREE.PointLight(0xff2fb0,2.2,9,2); beam.position.set(0,1.6,1.4); g.add(beam);
+  // warm light spilling from the doorway (shows through once the leaves swing open) -- no sign
+  const spill=new THREE.Mesh(new THREE.PlaneGeometry(Wd-0.2,H-0.4), new THREE.MeshStandardMaterial({color:0xffcf8a,emissive:0xffcf8a,emissiveIntensity:1.1,side:THREE.DoubleSide}));
+  spill.position.set(0,(H-0.2)/2,-0.06); g.add(spill);
+  const beam=new THREE.PointLight(0xffb060,2.6,11,2); beam.position.set(0,1.7,1.6); g.add(beam);
   return g;
 }
 function barEligible(){ return !!GAME.inRun && !GAME.vinceNight; }
@@ -9178,12 +9180,12 @@ function beginToBar(){
   for(const f of FOODS){ if(f.g) scene.remove(f.g); } FOODS.length=0;
   for(const h of HAZARDS){ if(h.g) scene.remove(h.g); } HAZARDS.length=0;
   buildBarDoors().visible=true;
-  toast('🍸 THE CROWD MOVED INSIDE — head through the doors at the back');
+  toast('🍸 THE CROWD MOVED INSIDE — head through the doors, back-left');
   if(AC) drum('ride',0.7);
 }
 function updateToBar(dt){
   if(!GAME.toBar || !player) return;
-  if(player.pos.z < -HALFD+2.7 && Math.abs(player.pos.x) < 4.2){ GAME.toBar=false; goThroughDoors(); }
+  if(Math.hypot(player.pos.x-(-9), player.pos.z-(-HALFD+1.1)) < 2.9){ GAME.toBar=false; goThroughDoors(); }
 }
 function goThroughDoors(){
   const g=arena.userData.barDoors;
@@ -9600,6 +9602,7 @@ function tick(){
   } else if(GAME.mode==='day'){
     if(!GAME.menuOpen){ updatePlayer(sdt, pad); updateDay(sdt); }   // recipe cards freeze the shift
   } else if(GAME.mode==='after'){
+    if(AFTER.postBrawl && barRoom){ arena.visible=false; barRoom.visible=true; }   // keep the bar shown through the service
     updatePlayer(sdt, pad); updateAfter(sdt);
   } else if(GAME.mode==='plan'){
     updatePlayer(sdt, pad);
