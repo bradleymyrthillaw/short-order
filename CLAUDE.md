@@ -21,21 +21,30 @@ Live examples in code: `CROWD_SHIRTS` (instanced bar crowd) and the booth-seated
 `OUT` palette in `spawnPartyGroup`. Deepen new palettes to match these, not the
 old bright-pastel set they replaced.
 
-### Two colour roles — keep them separate
+### Glow and bloom are welcome — the enemy is WHITE, not glow
 
-- **Surface colour** (bodies, clothing, props, furniture): deep jewel tones,
-  and keep them **below the bloom threshold** so they stay rich. If a surface
-  must self-light in a dark room, drive its colour from **emissive on a
-  near-black base** (see the bar crowd's `bodyMat`: `color:0x06060a` +
-  `totalEmissiveRadiance += vColor` via `onBeforeCompile`). A white/light base
-  lit by ambient AND an additive emissive gets pushed through tone-mapping and
-  bloom and washes out to pastel — that's the failure mode to avoid.
-- **Neon accents** (grid floor, sign/rim glow, booth underglow, light strips):
-  these are meant to be bright and to bloom. The bright `NEON` palette in
-  `buildBarRoom` and `emat()` are for these, not for surfaces.
+Emissive glow, bloom, and **coloured lights are all encouraged** — they're core to
+the look. The one thing to avoid is **straight-up white / washed-out light**.
+Everything should read **deeper and more saturated than white**, glowing things
+included. A neon rim, a light strip, a coloured spot, a self-lit crowd — great,
+as long as the hue stays rich instead of blowing out to a pale/white core.
 
-Rule of thumb: if it's a *thing*, colour it deep; if it's a *light*, let it glow.
-When in doubt, err toward deeper and more saturated.
+- **Coloured lights: use them.** A magenta wash, a cyan spill, a warm amber
+  pool — far better than a neutral white light. Tint your lights.
+- **Keep the colour in the bright bits.** The failure mode is a surface/glow
+  clipping to white: all three channels racing to 1.0 under ambient + additive
+  emissive + bloom + tone-mapping, so the hue disappears. Guard against it —
+  bias toward a saturated hue and don't let every channel max out.
+- **One reliable technique** for a surface that must self-light in the dark and
+  stay saturated: drive its colour from **emissive on a near-black base** (see
+  the bar crowd's `bodyMat`: `color:0x06060a` + `totalEmissiveRadiance += vColor`
+  via `onBeforeCompile`). That keeps a light base from washing the hue out. It's a
+  tool, not a rule — glowing/blooming a deep colour on purpose is fine.
+- The `NEON` palette in `buildBarRoom` and `emat()` are the go-to bright accents
+  (grid, rims, underglow, strips); the deep jewel set above is for surfaces. Both
+  may glow — just keep both coloured.
+
+When in doubt: deeper and more saturated, never whiter.
 
 ## Rendering gotchas already learned here
 
@@ -43,8 +52,10 @@ When in doubt, err toward deeper and more saturated.
   drops a light from the shader's light list; `intensity=0` does not. The bar
   keeps its forward-light count low this way and carries glow with
   emissive + bloom instead.
-- **Bloom + tone-mapping desaturate bright additive colour toward white.** Keep
-  surface colours under `BLOOM.threshold`; reserve blooming for actual neon.
+- **Bloom + tone-mapping desaturate bright additive colour toward white** once
+  every channel maxes out. Not a reason to avoid glow — a reason to keep the hue
+  saturated as it brightens (bias the colour, don't let all channels hit 1) so
+  the glow stays coloured instead of going white.
 - Instanced crowds (`InstancedMesh`, per-instance `setColorAt`) keep big crowds
   at ~2 draw calls — no skeletons/mixers, transform-only idle animation.
 
