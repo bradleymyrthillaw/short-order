@@ -1558,6 +1558,12 @@ function buildSky(locale, isDay){
           const k=Math.min(1,m.emissiveIntensity);
           col.r=Math.min(1,col.r+m.emissive.r*k); col.g=Math.min(1,col.g+m.emissive.g*k); col.b=Math.min(1,col.b+m.emissive.b*k);
         }
+        // DEEPEN the backdrop: it's UNLIT (ignores the dark scene) and fog-immune, so
+        // at full authored brightness a pale sky slice washes the whole frame when the
+        // eye-level cam faces it. Pull the value down (hue/saturation preserved) so the
+        // sky reads as a deep moody backdrop that can't outshine the room. Textured
+        // meshes get a lighter touch so skyline art keeps its detail.
+        col.multiplyScalar(m.map ? 0.72 : 0.58);
         o.material=new THREE.MeshBasicMaterial({color:col, map:m.map||null, fog:false, depthWrite:false, side:m.side,
           transparent:!!m.transparent, alphaTest:m.alphaTest||0});   // alpha-cutout facades (see make_sky_city.py) need these carried over too
       }
