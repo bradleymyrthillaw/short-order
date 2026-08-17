@@ -9071,7 +9071,7 @@ function buildBarRoom(){
    bob/sway. bodies + heads = 2 draw calls for the WHOLE crowd, any count. */
 let BAR_CROWD_N=250;   // patrons in the bar -- cheap instanced crowd (2 draw calls at any count)
 const _CY=new V3(0,1,0), _cm=new THREE.Matrix4(), _cq=new THREE.Quaternion(), _cp=new V3(), _cs=new V3();
-const CROWD_SHIRTS=[0xff2fb0,0x2de2e6,0x2f6bff,0x9a4dff,0x36ff9a,0xff5d8f,0xffb020,0xff6a1e,0xef4e6b,0x4fd1c5,0xb388ff,0xffd24a];
+const CROWD_SHIRTS=[0xb3106f,0x0f8f9c,0x203fc4,0x6d18cf,0x0fa055,0xc21e50,0xc47410,0xc23a0e,0xa81436,0x158f84,0x6a25cf,0xc28f10];   // deep jewel tones -- richer, not pale
 /* Placement CONGREGATES patrons into knots (the bar, each cocktail table, the
    pool tables) plus a few dance-floor clumps, then sprinkles drifters. Each
    patron carries a behaviour mode: 0=chat (sway + glance), 1=dance (bounce +
@@ -9116,9 +9116,13 @@ function buildBarCrowd(n){
   // via onBeforeCompile so every patron reads in the dark room -- 250 legible figures,
   // not ~half swallowed by the shadows. (vColor is the per-instance colour under
   // USE_INSTANCING_COLOR.) Heads get a dim warm glow so they don't vanish either.
-  const bodyMat=new THREE.MeshStandardMaterial({roughness:.6,metalness:.05});
+  // Near-black BASE so the dim room light can't wash the shirt out; the colour comes
+  // almost entirely from emissive = the instance's (deep) shirt colour, so it reads
+  // RICH and saturated instead of pale. Kept below the bloom threshold so it doesn't
+  // bloom back to pastel.
+  const bodyMat=new THREE.MeshStandardMaterial({color:0x06060a, roughness:.6, metalness:.05});
   bodyMat.onBeforeCompile=(sh)=>{ sh.fragmentShader=sh.fragmentShader.replace(
-    '#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n\ttotalEmissiveRadiance += vColor * 0.85;'); };
+    '#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n\ttotalEmissiveRadiance += vColor * 1.0;'); };
   const headMat=new THREE.MeshStandardMaterial({color:0x120e18, emissive:0x2a2440, emissiveIntensity:0.9, roughness:.7});
   const bodies=new THREE.InstancedMesh(bodyGeo, bodyMat, n);
   const heads =new THREE.InstancedMesh(headGeo, headMat, n);
@@ -9358,7 +9362,7 @@ function spawnPartyGroup(){
   if(!free.length) return;
   const slot=free[(Math.random()*free.length)|0], b=BAR_BOOTHS[slot];
   const dx=Math.sin(b.rot), dz=Math.cos(b.rot);                  // booth opening direction
-  const OUT=[0xc4789a,0x4a6ea0,0xd2964a,0x607c54,0x7a5aa0,0x4fb0a0,0xc85a6a,0x5a9ec0];
+  const OUT=[0x9c2f66,0x274a86,0xb0641e,0x2f6a3a,0x5a2f8c,0x1f7d80,0xa8324a,0x2f6a9c];   // deeper, richer shirts
   const chef=(RIG.ready?makeChefGLB('customer',{shirt:OUT[(Math.random()*OUT.length)|0]}):makeChef({customer:true,jacket:OUT[0]}));
   chef.position.set(b.x-dx*1.35, 0, b.z-dz*1.35); chef.rotation.y=b.rot;   // seated on the banquette, facing out
   const g={ slot, x:b.x, z:b.z, g:chef, state:'waiting', patience:1, linger:0 };   // serve target = the table (3.4u reach clears the booth obst)
