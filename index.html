@@ -9071,16 +9071,15 @@ function crowdPlacement(n){
   // Everyone clusters where the room's alive -- the bar rail, the dance floor, the
   // pool tables, the cocktail tables -- so the crowd reads as a CRUSH. Zone sizes are
   // fractions of n, so the density holds whether it's a 90-head dive or a 320 packed house.
-  const barN=Math.round(n*0.18), danceN=Math.round(n*0.34), poolN=Math.round(n*0.12), tblN=Math.round(n*0.12);
+  const barN=Math.round(n*0.18), danceN=Math.round(n*0.26), poolN=Math.round(n*0.12), tblN=Math.round(n*0.10);
   for(let i=0;i<barN;i++) push(rand(-6.9,6.9), BARCTR.z+BD/2+0.7+Math.random()*2.0, 0, Math.PI+rand(-0.35,0.35), 0.22);   // 2-3 deep, elbows on the bar
-  const dspots=[[-6,4.6],[6,5.0],[0,7.4],[0,2.8],[-9.5,7.4],[9.5,7.4]];
-  for(const dc of dspots) clump(dc[0],dc[1], Math.round(danceN/dspots.length), 1, false, 2.3);                          // dense dance-floor blobs
+  const dspots=[[-6,4.4],[6,4.8],[0,7.6],[0,2.4],[-11,6.4],[11,6.4],[-11,1.4],[11,1.4]];                                // dance knots spread wider, into the flanks
+  for(const dc of dspots) clump(dc[0],dc[1], Math.round(danceN/dspots.length), 1, false, 2.4);
   for(const px of [-7.5,0,7.5]) clump(px, -0.4, Math.round(poolN/3), 0, true, 1.7);                                    // ringing the pool tables
   for(const s of SEATS) clump(s.x, s.z, Math.max(2,Math.round(tblN/Math.max(1,SEATS.length))), 0, true, 0.9);         // cocktail-table knots
   let guard=0;
-  while(P.length<n && guard++<3000){ const dance=Math.random()<0.4;                                                    // the rest: centre-weighted fill (crush in the middle, thins to the walls)
-    const gx=((Math.random()+Math.random()+Math.random())/3*2-1)*15.2, gz=CZ+((Math.random()+Math.random())/2*2-1)*7.7;
-    push(gx, gz, dance?1:2, rand(0,TAU), 0.4+Math.random()*0.7); }
+  while(P.length<n && guard++<3000){ const dance=Math.random()<0.4;                                                    // the rest: spread evenly across the whole floor so the corners fill in
+    push(rand(-15.2,15.2), rand(zmin, zmax-0.3), dance?1:2, rand(0,TAU), 0.4+Math.random()*0.7); }
   return P.slice(0,n);
 }
 function buildBarCrowd(n){
