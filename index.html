@@ -524,7 +524,7 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.outputEncoding = THREE.sRGBEncoding;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 0.84;   // with the sun gone the highlights no longer blow out, so exposure can sit back up; the grade's split-tone + vibrance keep colours saturated without washing
+renderer.toneMappingExposure = 0.86;   // with the sun gone the highlights no longer blow out, so exposure can sit back up; the grade's split-tone + vibrance keep colours saturated without washing
 app.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
@@ -657,9 +657,9 @@ const POST = new THREE.ShaderMaterial({
   '  { float lum=dot(col,vec3(0.299,0.587,0.114));',
   '    float mx=max(col.r,max(col.g,col.b)), mn=min(col.r,min(col.g,col.b));',
   '    float sat=(mx-mn)/max(mx,1e-4);',
-  '    float amt=1.24 + (1.0-sat)*0.4;',    // moderate saturation + light vibrance
+  '    float amt=1.55 + (1.0-sat)*0.45;',    // VIBRANT saturation + vibrance on the pale bits -- match the deep magenta/amber reference
   '    col=mix(vec3(lum),col,amt); }',
-  '  col=(col-0.5)*1.30+0.5;',                                // contrast S-curve, eased back from steep so mids aren't crushed as hard
+  '  col=(col-0.5)*1.40+0.5;',                                // punchy contrast S-curve -- crush the blacks, punch the neon (the reference has deep blacks)
   '  col=max(col,0.0);',
   '  col*=smoothstep(0.06,0.20,dot(col,vec3(0.299,0.587,0.114)))*0.55+0.45;',   // black-floor lift-killer: fade the very darkest values toward pure black so nothing sits as dark-grey
   '  col*=1.0-0.10*step(0.5,fract(gl_FragCoord.y*0.5));',    // stronger CRT scanline baseline for the retro vibe
@@ -821,14 +821,14 @@ scene.add(key);
 // warm because the ONE cool light below fights it, not because it's cool itself.
 const fill = new THREE.DirectionalLight(0xff2fb0, 1.6); fill.position.set(-8,6,-6); scene.add(fill);   // hot magenta counter-rim, cranked
 // GOLD/amber back rim for separation -- warm halo behind the fighters.
-const backRim = new THREE.DirectionalLight(0xffb03a, 0.95); backRim.position.set(-9,9,-14); scene.add(backRim);
+const backRim = new THREE.DirectionalLight(0xffb03a, 1.2); backRim.position.set(-9,9,-14); scene.add(backRim);
 // the ONE cool counter-light: electric cyan, kept present but subordinate so the
 // warm rig reads as WARM by contrast (drop it entirely and the warm turns muddy).
-const coolCounter = new THREE.DirectionalLight(0x2de2e6, 0.9); coolCounter.position.set(11,5,7); scene.add(coolCounter);   // cool cyan rim -- artificial
+const coolCounter = new THREE.DirectionalLight(0x2de2e6, 1.0); coolCounter.position.set(11,5,7); scene.add(coolCounter);   // cool cyan rim -- artificial
 // WARM pool lights doing the "sunset floor" work: a roaming hot-orange, a gold
 // up-light and a red-hot spark -- point lights so they pool warm color across
 // the grid floor and bloom. Turned up so the floor glows hot.
-const goldUp = new THREE.PointLight(0xffb03a, 1.15, 22, 2);  goldUp.position.set(0,0.6,0);  scene.add(goldUp);        // gold floor bounce -- artificial floor wash, cranked
+const goldUp = new THREE.PointLight(0xffb03a, 1.7, 22, 2);  goldUp.position.set(0,0.6,0);  scene.add(goldUp);        // gold floor bounce -- artificial floor wash, cranked
 const orangePool = new THREE.PointLight(0xff6a1e, 1.5, 18, 2); orangePool.position.set(-6,2.4,4); scene.add(orangePool); // hot orange roamer (animated in the loop)
 const yellowSpark = new THREE.PointLight(0xff2b4e, 0.85, 14, 2); yellowSpark.position.set(6,2.4,-4); scene.add(yellowSpark); // red-hot accent (animated)
 // positioned at the actual stove once BAR exists, in the ARENA section below
@@ -9522,14 +9522,14 @@ function dayScene(on){
   // floor pools, work lamp, stove, neon grid) carry it. The hot directional 'sun'
   // is gone, so bright horizontal surfaces stop washing to white. `on` now only
   // swaps the after-hours DRESSING (palms/pergola/bar island), not the light.
-  hemi.intensity = 0.40;
+  hemi.intensity = 0.50;
   key.intensity  = 0.45;
-  fill.intensity = 0.75;
+  fill.intensity = 1.90;   // INTENSE magenta -- the reference look leans hard on this
   if(hemi.color&&hemi.color.setHex) hemi.color.setHex(0x352a4f);                    // moody neutral-purple sky bounce
   if(scene.background&&scene.background.setHex) scene.background.setHex(0x0c0912);   // dark neon night -- no golden-hour sky
   if(scene.fog){ if(scene.fog.color&&scene.fog.color.setHex) scene.fog.color.setHex(0x0c0912); scene.fog.far=70; }
   if(typeof BLOOM!=='undefined' && BLOOM){ BLOOM.strength=0.42; BLOOM.radius=0.5; BLOOM.threshold=0.86; }
-  const _lamp=arena.userData.lampLight; if(_lamp){ if(LIGHT0.lamp===undefined) LIGHT0.lamp=_lamp.intensity; _lamp.intensity=1.8; }
+  const _lamp=arena.userData.lampLight; if(_lamp){ if(LIGHT0.lamp===undefined) LIGHT0.lamp=_lamp.intensity; _lamp.intensity=2.2; }
   const bg=arena.userData.barG; if(bg) bg.visible=!on;                                // hide the liquor 'island'
   const pl=arena.userData.palmsG; if(pl) for(const p of pl) p.visible=!on;            // and the after-hours palms
   const pg=arena.userData.pergola; if(pg) for(const m of pg) m.visible=!on;           // and the overhead beams/colonnade
@@ -9825,11 +9825,11 @@ function tick(){
   // roaming neon accent lights -- swim the orange & yellow pools around the room
   if(typeof orangePool!=='undefined' && orangePool.position){
     orangePool.position.set(Math.sin(GAME.t*0.5)*7, 2.4, Math.cos(GAME.t*0.37)*5);
-    orangePool.intensity=1.2+Math.sin(GAME.t*3.1)*0.4;
+    orangePool.intensity=1.7+Math.sin(GAME.t*3.1)*0.5;
   }
   if(typeof yellowSpark!=='undefined' && yellowSpark.position){
     yellowSpark.position.set(Math.cos(GAME.t*0.63)*6, 2.2, Math.sin(GAME.t*0.44)*4.5);
-    yellowSpark.intensity=0.7+Math.sin(GAME.t*4.7+1.7)*0.28;
+    yellowSpark.intensity=0.95+Math.sin(GAME.t*4.7+1.7)*0.3;
   }
   tickBarCrowd(dt);               // instanced bar crowd idle (no-op unless the bar is up)
   renderFrame();
