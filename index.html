@@ -3100,7 +3100,7 @@ if(lookZone){
 });
 
 /* ================================================================ CAMERA */
-const CAM={ yaw:Math.PI, pitch:0.31, dist:4.9, height:2.9, lockK:0, aimK:0, look:new V3(), pos:new V3() };  // pitch: mouse-look vertical; aimK: tight over-shoulder blend while aiming
+const CAM={ yaw:Math.PI, pitch:0.31, dist:4.9, height:2.9, lockK:0, aimK:0, barK:0, look:new V3(), pos:new V3() };  // pitch: mouse-look vertical; aimK: tight over-shoulder blend while aiming; barK: committed over-shoulder framing through the bar loop
 const camFwd=new V3(), camRight=new V3();
 function updateCameraVectors(){ camFwd.set(Math.sin(CAM.yaw),0,Math.cos(CAM.yaw)); camRight.set(-camFwd.z,0,camFwd.x); }
 
@@ -9875,6 +9875,12 @@ function updateCamera(dt){
   // AIM blend: pull into the tight over-shoulder view while mouse-aiming / gun-aiming (same framing as lock-on)
   CAM.aimK = damp(CAM.aimK, ((typeof MOUSE!=='undefined'&&MOUSE.locked)||(P&&P._gunAiming))?1:0, 8, dt);
   const k2 = Math.max(k, CAM.aimK);
+  // BAR LOOP: a committed over-the-shoulder frame all through the bar (service AND
+  // fights) -- camera pulled in, dropped, and pushed onto one shoulder so weaving
+  // the crowded room feels intimate instead of the wide brawl boom. Yields to
+  // lock-on/aim framing (k2) when those own the shot.
+  CAM.barK = damp(CAM.barK||0, (typeof barRoom!=='undefined'&&barRoom&&barRoom.visible)?1:0, 6, dt);
+  const bk = CAM.barK*(1-k2);
   // AIMING: anchor the follow to the ground root (P.pos), not the center-of-mass. The COM
   // leans/sways into a strafe, which would shift the "pinned" body a few % off-centre every
   // time you move left/right. Blending to pos by aimK keeps the over-shoulder body rock-steady.
@@ -9896,7 +9902,7 @@ function updateCamera(dt){
   // trail behind the player, but SHORTEN the distance so the camera can never
   // sit outside the room (which would just show the back of a wall).
   const mx=HALFW-0.6, mz=HALFD-0.6;
-  let dist=CAM.dist*(1-0.52*k2);                 // pull in tighter when locked OR aiming (.52) -- right on the shoulder
+  let dist=CAM.dist*(1-0.52*k2)*(1-0.28*bk);     // pull in tighter when locked OR aiming (.52), and through the bar loop (.28)
   if(dir.x>1e-4) dist=Math.min(dist,(mx-target.x)/dir.x);
   else if(dir.x<-1e-4) dist=Math.min(dist,(-mx-target.x)/dir.x);
   if(dir.z>1e-4) dist=Math.min(dist,(mz-target.z)/dir.z);
@@ -9911,13 +9917,19 @@ function updateCamera(dt){
   // LOCK-ON shoulder (melee): handedness-mirrored, camera only (k = lockK, not k2,
   // so gun-aim doesn't double-apply the handedness push).
   want.addScaledVector(camRight, 1.35*k*shoulder);
+  // BAR over-shoulder: sit the chef firmly on one side (handedness-mirrored), the room
+  // reading past the far shoulder. Shift the boom more than the look point so she HOLDS
+  // the side third instead of re-centring.
+  const barLat = 0.95*bk*shoulder;
+  want.addScaledVector(camRight, barLat);
+  look.addScaledVector(camRight, barLat*0.45);
   // GUN-AIM shoulder: classic right-shoulder frame -- body sits on the LEFT, sightline
   // clear to the right. Offset the boom AND the look point by the SAME amount so the
   // lens faces straight down-range; offsetting only the boom just re-centres the body.
   const aimLat = 0.72*CAM.aimK;
   want.addScaledVector(camRight, aimLat);
   look.addScaledVector(camRight, aimLat);
-  want.y = 1.4 + _sp*dist - 0.55*k2;                  // CAM.pitch raises/lowers the boom around the head-height pivot
+  want.y = 1.4 + _sp*dist - 0.55*k2 - 0.22*bk;        // CAM.pitch raises/lowers the boom; bar loop drops it a touch for an intimate, eye-level frame
   if(locked){
     // frame BOTH of you: sit the aim between the pair, biased at the enemy
     const t=P.lockOn.pos;
