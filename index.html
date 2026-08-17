@@ -7082,6 +7082,7 @@ function startNight(cfg, onEnd){
   if(TOUCHCAP){ touchEl.classList.add('on'); if(bPause) bPause.classList.add('on'); }
   document.getElementById('veil').classList.add('hide');
   document.getElementById('hint').classList.add('on');
+  if(HULL_PROPS) hullify(arena);   // FULL terrace cel outline for the brawl (idempotent; ground plane skipped)
 }
 let ended=false;
 function endNight(survived){
@@ -9527,6 +9528,7 @@ function endAfterHours(){
 }
 function startDay(){
   buildKitchen(); kitchenGrp.visible=true;
+  if(HULL_PROPS) hullify(arena);   // FULL terrace cel outline (deck/rails/palms/walls + furniture; ground plane skipped)
   // (blueprint envelopes removed from service: free-station grants scattered on the dining floor
   //  mid-shift stole interact taps and undercut the shop economy. Gear comes from the back office.)
   for(const tb of TABLES){ if(tb._cap) tb._cap.visible=false; }   // capacity badges are a prep-phase readout
