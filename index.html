@@ -524,7 +524,7 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.outputEncoding = THREE.sRGBEncoding;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 0.90;   // CONTRAST pass: bloom is now a tight glow only, so we don't need to duck exposure to survive it. Kept at the low end of 0.9-1.0 so the near-white hero surfaces (chef toque/apron, counter) don't blow to a bright pool while the crushed blacks (below) keep the darks true black
+renderer.toneMappingExposure = 0.84;   // with the sun gone the highlights no longer blow out, so exposure can sit back up; the grade's split-tone + vibrance keep colours saturated without washing
 app.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
@@ -643,9 +643,23 @@ const POST = new THREE.ShaderMaterial({
   // SYNTHWAVE GRADE: push saturation HARD and add an S-curve contrast so the
   // neon pops and the blacks crush -- this is the "way more contrast / way more
   // hues" pass, layered on top of whatever bloom already added.
-  '  { float lum=dot(col,vec3(0.299,0.587,0.114)); col=mix(vec3(lum),col,1.62); }',   // global saturation TURNED UP -- bold, loud neon (was 1.42)
-  '  col=(col-0.5)*1.44+0.5;',                                // STEEP contrast S-curve -- push mids apart hard: darks crush, neon punches
-  '  col*=vec3(1.06,1.0,0.94);',                              // WARM grade tilt: bias the whole frame toward the sunset (lift red, duck blue) so the neon reads hot
+  // SATURATION + VIBRANCE: a flat saturation multiply leaves the washed/pale
+  // surfaces pale (little chroma to scale). Add a vibrance term that pushes the
+  // LOW-saturation pixels hardest, so milky cream/white surfaces regain the hue the
+  // coloured lights put on them instead of sitting as a white-grey wash. Already-
+  // saturated neon is barely touched, so it doesn't blow out.
+  // SPLIT-TONE first, so the neutral/pale surfaces get a HUE (nothing sits white):
+  // shadows pushed deep violet-blue, highlights pushed warm amber. Runs BEFORE the
+  // vibrance so those freshly-tinted whites then have chroma to deepen.
+  '  { float lt=dot(col,vec3(0.299,0.587,0.114));',
+  '    vec3 loT=vec3(0.88,0.74,1.06), hiT=vec3(1.07,0.92,0.68);',   // gentle split-tone: shadows deep violet, highlights warm amber (no hard value-duck needed now the sun's gone)
+  '    col*=mix(loT,hiT, smoothstep(0.10,0.84,lt)); col=max(col,0.0); }',
+  '  { float lum=dot(col,vec3(0.299,0.587,0.114));',
+  '    float mx=max(col.r,max(col.g,col.b)), mn=min(col.r,min(col.g,col.b));',
+  '    float sat=(mx-mn)/max(mx,1e-4);',
+  '    float amt=1.24 + (1.0-sat)*0.4;',    // moderate saturation + light vibrance
+  '    col=mix(vec3(lum),col,amt); }',
+  '  col=(col-0.5)*1.30+0.5;',                                // contrast S-curve, eased back from steep so mids aren't crushed as hard
   '  col=max(col,0.0);',
   '  col*=smoothstep(0.06,0.20,dot(col,vec3(0.299,0.587,0.114)))*0.55+0.45;',   // black-floor lift-killer: fade the very darkest values toward pure black so nothing sits as dark-grey
   '  col*=1.0-0.10*step(0.5,fract(gl_FragCoord.y*0.5));',    // stronger CRT scanline baseline for the retro vibe
@@ -791,7 +805,7 @@ function hitPost(power,col){ const U=POST.uniforms;
 // hot MAGENTA from one side, electric CYAN from the other -- so fighters get a
 // two-tone neon edge instead of warm restaurant light.
 const hemi = new THREE.HemisphereLight(0xb03a2a, 0x08020a, 0.5); scene.add(hemi);   // WARM sunset sky bounce (molten orange-red), blacker ground = contrast holds
-const key = new THREE.DirectionalLight(0xff6a1e, 2.35);   // HOT ORANGE key -- the sunset torches the fighters; warm now leads, cranked up
+const key = new THREE.DirectionalLight(0xff8a3a, 0.55);   // no SUN any more -- just a soft warm directional to give bodies some form; the coloured practicals do the lighting
 key.position.set(6,13,4); key.castShadow = true;
 key.shadow.mapSize.set(2048,2048);
 key.shadow.camera.near=1; key.shadow.camera.far=48;
@@ -807,14 +821,14 @@ scene.add(key);
 // warm because the ONE cool light below fights it, not because it's cool itself.
 const fill = new THREE.DirectionalLight(0xff2fb0, 1.6); fill.position.set(-8,6,-6); scene.add(fill);   // hot magenta counter-rim, cranked
 // GOLD/amber back rim for separation -- warm halo behind the fighters.
-const backRim = new THREE.DirectionalLight(0xffb03a, 1.05); backRim.position.set(-9,9,-14); scene.add(backRim);
+const backRim = new THREE.DirectionalLight(0xffb03a, 0.95); backRim.position.set(-9,9,-14); scene.add(backRim);
 // the ONE cool counter-light: electric cyan, kept present but subordinate so the
 // warm rig reads as WARM by contrast (drop it entirely and the warm turns muddy).
-const coolCounter = new THREE.DirectionalLight(0x2de2e6, 0.85); coolCounter.position.set(11,5,7); scene.add(coolCounter);   // lone cool cyan accent
+const coolCounter = new THREE.DirectionalLight(0x2de2e6, 0.9); coolCounter.position.set(11,5,7); scene.add(coolCounter);   // cool cyan rim -- artificial
 // WARM pool lights doing the "sunset floor" work: a roaming hot-orange, a gold
 // up-light and a red-hot spark -- point lights so they pool warm color across
 // the grid floor and bloom. Turned up so the floor glows hot.
-const goldUp = new THREE.PointLight(0xffb03a, 1.2, 20, 2);  goldUp.position.set(0,0.6,0);  scene.add(goldUp);        // gold floor bounce
+const goldUp = new THREE.PointLight(0xffb03a, 1.15, 22, 2);  goldUp.position.set(0,0.6,0);  scene.add(goldUp);        // gold floor bounce -- artificial floor wash, cranked
 const orangePool = new THREE.PointLight(0xff6a1e, 1.5, 18, 2); orangePool.position.set(-6,2.4,4); scene.add(orangePool); // hot orange roamer (animated in the loop)
 const yellowSpark = new THREE.PointLight(0xff2b4e, 0.85, 14, 2); yellowSpark.position.set(6,2.4,-4); scene.add(yellowSpark); // red-hot accent (animated)
 // positioned at the actual stove once BAR exists, in the ARENA section below
@@ -1577,7 +1591,7 @@ buildAmbient();
     new THREE.MeshStandardMaterial({color:0x5a4028,roughness:.85,flatShading:true}));
   body.position.y=0.58; body.castShadow=body.receiveShadow=true; g.add(body);
   const top=new THREE.Mesh(new THREE.BoxGeometry(BAR.w+0.2,0.12,BAR.d+0.1),
-    new THREE.MeshStandardMaterial({color:0xd8cbb0,roughness:.55})); top.position.y=1.2; top.castShadow=true; g.add(top);
+    new THREE.MeshStandardMaterial({color:0x33261a,roughness:.55})); top.position.y=1.2; top.castShadow=true; g.add(top);   // deep top -- was pale, blew out under the lights
   // THE LIQUOR: a lit back-bar against the wall, stocked with a full row of
   // varied glass bottles (greens/ambers/blues/clears) that catch the light.
   const backMat=new THREE.MeshStandardMaterial({color:0x3a2a1a,roughness:.8,flatShading:true});
@@ -1637,7 +1651,7 @@ function passSlotX(i){ return (i-(PASS_SLOTS-1)/2) * (PASS.w-1.4)/(PASS_SLOTS-1)
     new THREE.MeshStandardMaterial({color:0x5a4028,roughness:.7,flatShading:true}));
   body.position.y=0.58; body.castShadow=body.receiveShadow=true; g.add(body);
   const top=new THREE.Mesh(new THREE.BoxGeometry(PASS.w+0.2,0.12,PASS.d+0.2),
-    new THREE.MeshStandardMaterial({color:COL.cream,roughness:.5})); top.position.y=1.2; top.castShadow=true; g.add(top);
+    new THREE.MeshStandardMaterial({color:0x2c2018,roughness:.5})); top.position.y=1.2; top.castShadow=true; g.add(top);   // deep counter top -- was cream, blew out white under the lights
   // brass heat-lamp posts, one at each end, echoing kitchen-room.js's pass
   for(const lx of [-PASS.w/2+0.5, PASS.w/2-0.5]){
     const post=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,0.9,8),
@@ -7605,7 +7619,7 @@ const dmat=(c,r,m)=>new THREE.MeshStandardMaterial({color:c,roughness:r==null?.7
 const STATION_LABEL={ lettucecrate:'LETTUCE', tomatocrate:'TOMATO', ricecrate:'RICE', cilantrocrate:'CILANTRO', limecrate:'LIME', avocadocrate:'AVOCADO', crabcrate:'CRAB', prep:'CHOP', prep2:'CHOP', mash:'MASH', counter:'COUNTER', plate:'PLATE UP', sink:'SINK', pot:'BOIL', griddle:'GRILL', fryer:'FRY', oven:'BAKE', doughcrate:'DOUGH', chickencrate:'CHICKEN', icebox:'ICE BOX', whiskeycrate:'WHISKEY', gincrate:'GIN', sourmixcrate:'SOUR MIX' };
 // bold, distinct accent colour per station -- painted on the counter FRONT so you
 // can read what each is from across the room (Overcooked/PlateUp colour-coding).
-const STATION_ACCENT={ lettucecrate:0x4fb03a, tomatocrate:0xd23f2a, ricecrate:0xd9c98a, cilantrocrate:0x3f8f34, limecrate:0x9fce3a, avocadocrate:0x5a7a2a, crabcrate:0xe08a5a, prep:0x8a5a2c, prep2:0x8a5a2c, mash:0x8a6a3a, counter:0xb89a6a, plate:0xdfe4e8, sink:0x2f9fb8, pot:0xc23a2a, griddle:0x394048, fryer:0xe6a721 };
+const STATION_ACCENT={ lettucecrate:0x4fb03a, tomatocrate:0xd23f2a, ricecrate:0xd9c98a, cilantrocrate:0x3f8f34, limecrate:0x9fce3a, avocadocrate:0x5a7a2a, crabcrate:0xe08a5a, prep:0x8a5a2c, prep2:0x8a5a2c, mash:0x8a6a3a, counter:0x6e5636, plate:0x566773, sink:0x2f9fb8, pot:0xc23a2a, griddle:0x394048, fryer:0xe6a721 };
 // a big glanceable icon per station -- shown in the proximity magnify bubble so you
 // never have to read the tiny counter labels.
 const STATION_EMOJI={ lettucecrate:'🥬', tomatocrate:'🍅', ricecrate:'🍚', cilantrocrate:'🌿', limecrate:'🍈', avocadocrate:'🥑', crabcrate:'🦀', prep:'🔪', prep2:'🔪', mash:'🥣', counter:'🍽', plate:'🍽️', sink:'🚰', pot:'🍲', griddle:'🥩', fryer:'🍟' };
@@ -7760,7 +7774,7 @@ function buildCounter(g, accent){
   cab.position.y=0.5; cab.castShadow=true; cab.receiveShadow=true; g.add(cab);
   const kick=new THREE.Mesh(new THREE.BoxGeometry(CELL,0.16,1.42),dmat(0x2b323b,.8,.2)); kick.position.y=0.08; g.add(kick);
   g.add(front);
-  const top=new THREE.Mesh(new THREE.BoxGeometry(CELL,0.12,1.56),dmat(0xe4dfd2,.5,.05));   // flush -> continuous
+  const top=new THREE.Mesh(new THREE.BoxGeometry(CELL,0.12,1.56),dmat(0x3a2c1e,.5,.05));   // flush -> continuous; deep counter (was pale, washed white)
   top.position.y=SURF-0.06; top.castShadow=true; g.add(top);
   g.add(lip);
   return top;
@@ -7900,7 +7914,7 @@ function buildDining(){
 function buildTableMesh(tb){
   if(!kitchenGrp || tb._g) return;
   const tg=new THREE.Group(); tg.position.set(tb.x,0,tb.z); kitchenGrp.add(tg); tb._g=tg;
-  const tt=new THREE.Mesh(new THREE.CylinderGeometry(1.05,1.05,0.1,20),dmat(0xc07a44,.55,.05)); tt.position.y=0.95; tt.castShadow=true; tg.add(tt);
+  const tt=new THREE.Mesh(new THREE.CylinderGeometry(1.05,1.05,0.1,20),dmat(0x743d1c,.55,.05)); tt.position.y=0.95; tt.castShadow=true; tg.add(tt);   // deep burnt-amber top -- was pale tan, washed white under the floor pools
   const post=new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.16,0.9,10),dmat(0x4a3626,.6,.1)); post.position.y=0.47; tg.add(post);
   const foot=new THREE.Mesh(new THREE.CylinderGeometry(0.42,0.42,0.06,14),dmat(0x3a2a1c,.6,.1)); foot.position.y=0.04; tg.add(foot);
   tb._chairs=[];
@@ -9502,20 +9516,24 @@ function dayScene(on){
     LIGHT0.bg=(scene.background&&scene.background.getHex)?scene.background.getHex():0x140d07;
     if(scene.fog){ LIGHT0.fogcol=(scene.fog.color&&scene.fog.color.getHex)?scene.fog.color.getHex():0x140d07; LIGHT0.fogfar=scene.fog.far; }
   }
-  // natural EVENING SUNLIGHT: a low warm key does the work, low ambient keeps the
-  // shadows (contrast). No overhead-lamp look -- the beams are hidden.
-  hemi.intensity = on?0.5:LIGHT0.hemi;
-  key.intensity  = on?2.6:LIGHT0.key;
-  fill.intensity = on?0.4:LIGHT0.fill;
-  if(hemi.color&&hemi.color.setHex) hemi.color.setHex(on?0xf1dcc0:LIGHT0.hcol);       // warm sky fill
-  if(scene.background&&scene.background.setHex) scene.background.setHex(on?0xc9b48c:LIGHT0.bg);  // hazy golden-hour sky
-  if(scene.fog){ if(scene.fog.color&&scene.fog.color.setHex) scene.fog.color.setHex(on?0xceba94:LIGHT0.fogcol); scene.fog.far=on?85:LIGHT0.fogfar; }
-  if(typeof BLOOM!=='undefined' && BLOOM){ BLOOM.strength=on?0.15:0.42; BLOOM.radius=on?0.35:0.5; BLOOM.threshold=on?0.95:0.88; }   // night-tuned bloom washed out the daylit kitchen
-  const _lamp=arena.userData.lampLight; if(_lamp){ if(LIGHT0.lamp===undefined) LIGHT0.lamp=_lamp.intensity; _lamp.intensity=on?2.5:LIGHT0.lamp; }
+  // ALL-ARTIFICIAL RIG (no sun): day and brawl share ONE lighting look, so the
+  // room reads the same from the overhead prep cam and the over-shoulder brawl cam.
+  // A dim neutral-purple ambient + coloured practicals (magenta/cyan rims, warm
+  // floor pools, work lamp, stove, neon grid) carry it. The hot directional 'sun'
+  // is gone, so bright horizontal surfaces stop washing to white. `on` now only
+  // swaps the after-hours DRESSING (palms/pergola/bar island), not the light.
+  hemi.intensity = 0.40;
+  key.intensity  = 0.45;
+  fill.intensity = 0.75;
+  if(hemi.color&&hemi.color.setHex) hemi.color.setHex(0x352a4f);                    // moody neutral-purple sky bounce
+  if(scene.background&&scene.background.setHex) scene.background.setHex(0x0c0912);   // dark neon night -- no golden-hour sky
+  if(scene.fog){ if(scene.fog.color&&scene.fog.color.setHex) scene.fog.color.setHex(0x0c0912); scene.fog.far=70; }
+  if(typeof BLOOM!=='undefined' && BLOOM){ BLOOM.strength=0.42; BLOOM.radius=0.5; BLOOM.threshold=0.86; }
+  const _lamp=arena.userData.lampLight; if(_lamp){ if(LIGHT0.lamp===undefined) LIGHT0.lamp=_lamp.intensity; _lamp.intensity=1.8; }
   const bg=arena.userData.barG; if(bg) bg.visible=!on;                                // hide the liquor 'island'
   const pl=arena.userData.palmsG; if(pl) for(const p of pl) p.visible=!on;            // and the after-hours palms
   const pg=arena.userData.pergola; if(pg) for(const m of pg) m.visible=!on;           // and the overhead beams/colonnade
-  if(typeof buildSky==='function') buildSky(currentLocale(), on);                    // swap the outside view for tonight's locale + day/night
+  if(typeof buildSky==='function') buildSky(currentLocale(), false);                 // always the night view outside -- no daylight washing in
 }
 // bob every board's knife: fast up/down while COOK is held (s._chopping), easing
 // back to a raised rest otherwise. Flecks fly off the food on each down-stroke.
@@ -9758,7 +9776,7 @@ function tick(){
   const flames=arena.userData.stoveFlames||[];
   for(const f of flames){ f.scale.y=1+Math.sin(GAME.t*18+f.userData.b)*0.15; f.material.emissiveIntensity=1.8+Math.sin(GAME.t*22+f.userData.b)*0.6; }
   FLAME_MAT.uniforms.uTime.value=GAME.t;   // the real flames animate entirely in-shader
-  const NIGHTFX=!(GAME.mode==='day'||GAME.mode==='plan');
+  const NIGHTFX=(GAME.mode!=='title');   // neon grid + stove glow drive ALL gameplay now (day too) -- one consistent artificial look
   stoveGlow.intensity=NIGHTFX?0.8+Math.sin(GAME.t*16)*0.2:0.15;
   // the work-lamp's gentle overhead sway
   const lp=arena.userData.lampPivot;
@@ -9807,11 +9825,11 @@ function tick(){
   // roaming neon accent lights -- swim the orange & yellow pools around the room
   if(typeof orangePool!=='undefined' && orangePool.position){
     orangePool.position.set(Math.sin(GAME.t*0.5)*7, 2.4, Math.cos(GAME.t*0.37)*5);
-    orangePool.intensity=1.5+Math.sin(GAME.t*3.1)*0.45;
+    orangePool.intensity=1.2+Math.sin(GAME.t*3.1)*0.4;
   }
   if(typeof yellowSpark!=='undefined' && yellowSpark.position){
     yellowSpark.position.set(Math.cos(GAME.t*0.63)*6, 2.2, Math.sin(GAME.t*0.44)*4.5);
-    yellowSpark.intensity=0.85+Math.sin(GAME.t*4.7+1.7)*0.35;
+    yellowSpark.intensity=0.7+Math.sin(GAME.t*4.7+1.7)*0.28;
   }
   tickBarCrowd(dt);               // instanced bar crowd idle (no-op unless the bar is up)
   renderFrame();
