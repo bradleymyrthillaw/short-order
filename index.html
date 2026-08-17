@@ -9039,7 +9039,7 @@ function buildBarRoom(){
    couple of draw calls. No skeletons, no mixers -- each patron is two instanced
    primitives (body + head) with a per-instance colour + a transform-only idle
    bob/sway. bodies + heads = 2 draw calls for the WHOLE crowd, any count. */
-let BAR_CROWD_N=44;   // patrons in the bar -- cheap instanced crowd, tune freely (holds 80+)
+let BAR_CROWD_N=250;   // patrons in the bar -- cheap instanced crowd (2 draw calls at any count)
 const _CY=new V3(0,1,0), _cm=new THREE.Matrix4(), _cq=new THREE.Quaternion(), _cp=new V3(), _cs=new V3();
 const CROWD_SHIRTS=[0xff2fb0,0x2de2e6,0x2f6bff,0x9a4dff,0x36ff9a,0xff5d8f,0xffb020,0xff6a1e,0xef4e6b,0x4fd1c5,0xb388ff,0xffd24a];
 /* Placement CONGREGATES patrons into knots (the bar, each cocktail table, the
@@ -9047,7 +9047,7 @@ const CROWD_SHIRTS=[0xff2fb0,0x2de2e6,0x2f6bff,0x9a4dff,0x36ff9a,0xff5d8f,0xffb0
    patron carries a behaviour mode: 0=chat (sway + glance), 1=dance (bounce +
    twist + weight-shift), 2=drift (slow local wander, facing where it moves). */
 function crowdPlacement(n){
-  const P=[], BD=1.6, zmin=BARCTR.z+1.6, zmax=9.0;
+  const P=[], BD=1.6, zmin=BARCTR.z+1.6, zmax=11.0;
   const push=(hx,hz,mode,face0,r)=>P.push({ hx:clamp(hx,-15,15), hz:clamp(hz,zmin,zmax), mode, face0, r:r==null?0.6:r,
     phase:P.length*1.7, sx:0.9+Math.random()*0.25, sy:0.9+Math.random()*0.24 });
   const clump=(cx,cz,count,mode,faceIn,spread)=>{ for(let i=0;i<count;i++){ const a=Math.random()*TAU, rr=Math.sqrt(Math.random())*spread,
@@ -9057,8 +9057,8 @@ function crowdPlacement(n){
   for(const px of [-7.5,0,7.5]) clump(px, -0.5, 3, 0, true, 1.9);              // watching the pool
   for(const dc of [[-10.5,5.5],[10.5,5.5],[0,7.0]]) clump(dc[0],dc[1], 7, 1, false, 1.7);   // dance-floor clumps
   let guard=0;
-  while(P.length<n && guard++<1000){ const dance=Math.random()<0.45;
-    push(rand(-13,13), rand(zmin,zmax-0.4), dance?1:2, rand(0,TAU), 0.5+Math.random()*0.9); }   // the rest: dancers + drifters
+  while(P.length<n && guard++<2000){ const dance=Math.random()<0.42;
+    push(rand(-15.5,15.5), rand(zmin,zmax-0.4), dance?1:2, rand(0,TAU), 0.5+Math.random()*0.9); }   // the rest: dancers + drifters, spread wide
   return P.slice(0,n);
 }
 function buildBarCrowd(n){
