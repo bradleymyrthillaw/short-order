@@ -9032,7 +9032,56 @@ function buildBarRoom(){
   // collision: the front counter + the back-bar block (pool tables pushed above)
   BAR_OBST.push({x:BARCTR.x,z:BARCTR.z,rx:BW/2,rz:BD/2+0.35,top:1.25});
   BAR_OBST.push({x:0,z:BBZ+0.4,rx:BW/2,rz:1.0,top:1.2});
+  buildBarCrowd(BAR_CROWD_N);
   return R;
+}
+/* ---- BAR CROWD: a cheap instanced crowd so the room can hold 30+ patrons for a
+   couple of draw calls. No skeletons, no mixers -- each patron is two instanced
+   primitives (body + head) with a per-instance colour + a transform-only idle
+   bob/sway. bodies + heads = 2 draw calls for the WHOLE crowd, any count. */
+let BAR_CROWD_N=44;   // patrons in the bar -- cheap instanced crowd, tune freely (holds 80+)
+const _CY=new V3(0,1,0), _cm=new THREE.Matrix4(), _cq=new THREE.Quaternion(), _cp=new V3(), _cs=new V3();
+const CROWD_SHIRTS=[0xff2fb0,0x2de2e6,0x2f6bff,0x9a4dff,0x36ff9a,0xff5d8f,0xffb020,0xff6a1e,0xef4e6b,0x4fd1c5,0xb388ff,0xffd24a];
+function crowdSpots(n){
+  const spots=[], BD=1.6, front=BARCTR.z+BD/2+0.85;
+  for(let i=-5;i<=5;i++) spots.push({x:i*1.05, z:front, face:Math.PI});                 // lined up along the bar
+  for(const s of SEATS) spots.push({x:s.x+rand(-0.35,0.35), z:s.z+0.75, face:0});        // around the cocktail tables
+  for(const px of [-7.5,0,7.5]) for(const o of [[-1.75,0],[1.75,0],[0,1.15]]) spots.push({x:px+o[0], z:-0.5+o[1], face:Math.atan2(-o[0],-o[1])});   // ringing the pool tables
+  let guard=0;
+  while(spots.length<n && guard++<600){ const x=rand(-14.5,14.5), z=rand(BARCTR.z+2.0,8.6);   // rest mill on the open floor (never in the bar pit)
+    spots.push({x,z,face:rand(0,TAU)}); }
+  while(spots.length<n) spots.push({x:rand(-14.5,14.5),z:rand(-3,8.6),face:rand(0,TAU)});
+  return spots.slice(0,n);
+}
+function buildBarCrowd(n){
+  if(!barRoom) return;
+  const old=barRoom.userData.crowd; if(old){ barRoom.remove(old.bodies); barRoom.remove(old.heads); old.bodies.geometry.dispose(); old.heads.geometry.dispose(); }
+  const bodyGeo=new THREE.CylinderGeometry(0.17,0.28,1.05,7); bodyGeo.translate(0,0.55,0);
+  const headGeo=new THREE.SphereGeometry(0.18,7,6); headGeo.translate(0,1.32,0);
+  const bodies=new THREE.InstancedMesh(bodyGeo, new THREE.MeshStandardMaterial({roughness:.65,metalness:.05}), n);
+  const heads =new THREE.InstancedMesh(headGeo, new THREE.MeshStandardMaterial({color:0x2a2230,roughness:.7}), n);
+  bodies.castShadow=heads.castShadow=false; bodies.frustumCulled=heads.frustumCulled=false;
+  const spots=crowdSpots(n), data=[], col=new THREE.Color();
+  for(let i=0;i<n;i++){ const sp=spots[i];
+    const d={ x:sp.x, z:sp.z, face:sp.face+rand(-0.25,0.25), phase:i*1.9, sway:0.5+Math.random()*0.8, sx:0.9+Math.random()*0.25, sy:0.92+Math.random()*0.22 };
+    data.push(d);
+    _cp.set(d.x,0,d.z); _cq.setFromAxisAngle(_CY,d.face); _cs.set(d.sx,d.sy,d.sx); _cm.compose(_cp,_cq,_cs);
+    bodies.setMatrixAt(i,_cm); heads.setMatrixAt(i,_cm);
+    col.setHex(CROWD_SHIRTS[i%CROWD_SHIRTS.length]); bodies.setColorAt(i,col);
+  }
+  bodies.instanceMatrix.needsUpdate=true; heads.instanceMatrix.needsUpdate=true; if(bodies.instanceColor) bodies.instanceColor.needsUpdate=true;
+  barRoom.add(bodies); barRoom.add(heads);
+  barRoom.userData.crowd={ bodies, heads, data, n };
+}
+function tickBarCrowd(dt){
+  const c=barRoom&&barRoom.visible&&barRoom.userData.crowd; if(!c) return;
+  const t=GAME.t, B=c.bodies, H=c.heads, data=c.data;
+  for(let i=0;i<c.n;i++){ const d=data[i];
+    const bob=Math.sin(t*2.1+d.phase)*0.045, sway=Math.sin(t*1.25+d.phase*0.7)*0.11*d.sway;
+    _cp.set(d.x,bob,d.z); _cq.setFromAxisAngle(_CY,d.face+sway); _cs.set(d.sx,d.sy,d.sx); _cm.compose(_cp,_cq,_cs);
+    B.setMatrixAt(i,_cm); H.setMatrixAt(i,_cm);
+  }
+  B.instanceMatrix.needsUpdate=true; H.instanceMatrix.needsUpdate=true;
 }
 function enterBarRoom(){
   buildBarRoom();
@@ -9519,6 +9568,7 @@ function tick(){
     yellowSpark.position.set(Math.cos(GAME.t*0.63)*6, 2.2, Math.sin(GAME.t*0.44)*4.5);
     yellowSpark.intensity=0.85+Math.sin(GAME.t*4.7+1.7)*0.35;
   }
+  tickBarCrowd();                 // instanced bar crowd idle (no-op unless the bar is up)
   renderFrame();
 }
 
