@@ -2907,16 +2907,16 @@ const KEY={};
 addEventListener('keydown',e=>{ if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key))e.preventDefault();
   KEY[e.key.toLowerCase()]=true; audioInit(); if(AC&&AC.state==='suspended')AC.resume(); });
 addEventListener('keyup',e=>{ KEY[e.key.toLowerCase()]=false; });
-const MOUSE={l:false,r:false,lHeld:false,locked:false,justLocked:false,sens:1};
+const MOUSE={l:false,r:false,lHeld:false,rHeld:false,locked:false,justLocked:false,sens:1};
 const _canvas=renderer.domElement;
 _canvas.addEventListener('mousedown',e=>{ audioInit(); if(AC&&AC.state==='suspended')AC.resume();
   const wasLocked=(document.pointerLockElement===_canvas);
-  if(e.button===0){MOUSE.l=true;MOUSE.lHeld=true;} if(e.button===2)MOUSE.r=true;
+  if(e.button===0){MOUSE.l=true;MOUSE.lHeld=true;} if(e.button===2){MOUSE.r=true;MOUSE.rHeld=true;}
   // desktop THIRD-PERSON aim: click the arena to lock the mouse -> the mouse now ORBITS the camera (Esc unlocks)
   if(!TOUCHCAP && GAME.mode==='play' && !wasLocked){ try{ const p=_canvas.requestPointerLock&&_canvas.requestPointerLock(); if(p&&p.catch)p.catch(()=>{}); }catch(_){}
     MOUSE.l=false; MOUSE.lHeld=false; }   // the click that GRABS the pointer must not also fire the gun
 });
-addEventListener('mouseup',e=>{ if(e.button===0){MOUSE.l=false;MOUSE.lHeld=false;} if(e.button===2)MOUSE.r=false; });
+addEventListener('mouseup',e=>{ if(e.button===0){MOUSE.l=false;MOUSE.lHeld=false;} if(e.button===2){MOUSE.r=false;MOUSE.rHeld=false;} });
 document.addEventListener('pointerlockchange',()=>{ MOUSE.locked=(document.pointerLockElement===_canvas);
   const xh=document.getElementById('xhair'); if(xh) xh.style.display=MOUSE.locked?'block':'none';
   if(MOUSE.locked) MOUSE.justLocked=true; else { MOUSE.l=false; MOUSE.lHeld=false; } });   // clear stuck auto-fire on unlock
@@ -2957,6 +2957,7 @@ function pollPad(){
   const pressed=i=>b[i]&&b[i].pressed;
   out.light=GP.edges.tap('b0', pressed(0));       // cross
   out.heavy=GP.edges.tap('b2', pressed(2));       // square
+  out.heavyHeld=pressed(2);                        // held state -> hold-to-spin (kitchen tornado)
   out.pickup=GP.edges.tap('b3', pressed(3));      // triangle
   out.pickupHeld=pressed(3);                      // held state (hold-to-chug at the bar)
   const circ=GP.edges.tap('b1', pressed(1));      // circle -- one edge read, shared by grapple-mash + JUMP
@@ -3814,9 +3815,13 @@ function updatePlayer(dt, pad, actor){
   // ----- attacks (Cross light / Square heavy / touch) -----
   let wantLight=!COOKING && P.wpn!=='spudgun' && (pad.light||(!REMOTE&&(tapK('j')||MOUSE.l||consume('lightEdge')))); if(!REMOTE) MOUSE.l=false;
   let wantHeavy=!COOKING && (pad.heavy||(!REMOTE&&(tapK('k')||MOUSE.r||consume('heavyEdge')))); if(!REMOTE) MOUSE.r=false;
-  // KITCHEN TORNADO: LIGHT + HEAVY together, paid for with stamina (needs >=50%).
-  // Fires before the swing logic and consumes both inputs so no attack comes out.
-  if(wantLight && wantHeavy && !COOKING && kitchenTornado(P)){ wantLight=false; wantHeavy=false; }
+  // KITCHEN TORNADO (spin): HOLD the heavy button. A quick TAP is still a normal
+  // heavy swing; keep heavy held and the chef whirls out into the spin (once per
+  // hold), paid for with stamina (>=50%) on its own cooldown. Pad/touch/key/mouse.
+  const heavyHeld = !COOKING && (pad.heavyHeld || TOUCH.heavyHeld || (!REMOTE && (KEY['k'] || MOUSE.rHeld)));
+  if(heavyHeld){ P._spinHoldT=(P._spinHoldT||0)+dt;
+    if(P._spinHoldT>=0.22 && !P._spinFired && kitchenTornado(P)){ P._spinFired=true; wantHeavy=false; } }
+  else { P._spinHoldT=0; P._spinFired=false; }
   const airborne=P.pos.y>restY(P.pos.x,P.pos.z,P.pos.y,P.r)+0.06;   // relative to the floor OR the prop you're standing on
   // Begin one swing of the chain. Mid-combo it STAYS committed to the enemy we
   // locked onto (comboTarget, set on the first landed hit) so the whole combo
