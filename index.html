@@ -2133,6 +2133,57 @@ function applyDeform(mesh, d, scale){
   u.uDentA.value = d.a/(scale||1); u.uDentP.value.copy(d.p); u.uDentN.value.copy(d.n);
 }
 
+/* ============ INVERTED-HULL OUTLINES ==============================
+   A cel/comic outline the cheap way: each mesh gets a duplicate pushed OUT
+   along its normals and rendered BACK-faces-only in near-black, so only the
+   expanded rim pokes past the real silhouette. Expansion is done in CLIP
+   space (offset scaled by clip.w) so it's a constant screen width -- one
+   thickness fits tiny chef parts and big props alike. Skinned rigs (the GLB
+   chefs) get a variant that skins the position + normal so the outline
+   deforms with the animation. Draw the hull first (renderOrder-1); the real
+   mesh overwrites the interior, leaving just the rim. */
+const OUTLINE_COL=new THREE.Color(0x070510);
+const OUTLINE_THICK=0.006;   // clip-space half-units (~a few px at 1080p)
+let HULL_PROPS=false;        // outline PROPS too? off by default -- the environment is hundreds of small
+                             // meshes, so hulling it ~6x's the draw calls (mobile-prohibitive). Characters
+                             // are always outlined. Flip to true (console/build) to cel the whole scene.
+const _outlineFrag='uniform vec3 uCol;\nvoid main(){ gl_FragColor=vec4(uCol,1.0); }';
+function _outlineVert(skinned){ return [
+  skinned?'#include <skinning_pars_vertex>':'',
+  'uniform float uThick;',
+  'void main(){',
+  skinned?'  #include <skinbase_vertex>':'',
+  '  vec3 objectNormal = normalize(normal);',
+  skinned?'  #include <skinnormal_vertex>':'',   // skins objectNormal via boneMat*
+  '  vec3 transformed = position;',
+  skinned?'  #include <skinning_vertex>':'',      // skins transformed via boneMat*
+  '  vec4 clip = projectionMatrix * modelViewMatrix * vec4(transformed,1.0);',
+  '  vec3 vn = normalize(normalMatrix * objectNormal);',
+  '  vec2 dir = vn.xy; float L = length(dir); dir = L>1e-4 ? dir/L : vec2(0.0);',
+  '  clip.xy += dir * uThick * clip.w;',
+  '  gl_Position = clip;',
+  '}'].join('\n'); }
+function makeOutlineMat(skinned){
+  const m=new THREE.ShaderMaterial({ uniforms:{ uThick:{value:OUTLINE_THICK}, uCol:{value:OUTLINE_COL} },
+    vertexShader:_outlineVert(skinned), fragmentShader:_outlineFrag, side:THREE.BackSide, fog:false });
+  if(skinned) m.skinning=true;
+  return m;
+}
+const OUTLINE_MAT=makeOutlineMat(false), OUTLINE_MAT_SKIN=makeOutlineMat(true);
+function addHull(m){
+  if(!m || m._isHull || m._hulled || m.isInstancedMesh || m._noHull || !m.geometry) return;   // instanced crowds handled separately (or not at all)
+  const g=m.geometry; if(!g.attributes || !g.attributes.position || !g.attributes.normal) return;
+  const mat0=Array.isArray(m.material)?m.material[0]:m.material;
+  if(!mat0 || mat0.transparent || mat0.side===THREE.BackSide || mat0.depthWrite===false) return;   // skip glows/particles/sky
+  m._hulled=true;
+  const hull = m.isSkinnedMesh ? new THREE.SkinnedMesh(g, OUTLINE_MAT_SKIN) : new THREE.Mesh(g, OUTLINE_MAT);
+  if(m.isSkinnedMesh) hull.bind(m.skeleton, m.bindMatrix);
+  hull._isHull=true; hull.castShadow=false; hull.receiveShadow=false; hull.frustumCulled=false;
+  hull.renderOrder=(m.renderOrder||0)-1;
+  m.add(hull);   // child at identity -> inherits the mesh's transform (and skeleton, for skinned)
+}
+function hullify(root){ if(!root) return; const list=[]; root.traverse(o=>{ if(o.isMesh && !o._isHull && !o._hulled) list.push(o); }); for(const m of list) addHull(m); }
+
 function makeChef(o){
   // NEW: a real mixamorig skeleton (cloned from X_Bot) with the stylized chef
   // cosmetics ATTACHED TO ITS BONES. Mixamo clips play natively on this skeleton
@@ -2239,6 +2290,7 @@ function makeChef(o){
     neon:{ col:0x000000, jacketI:0, skinI:0 },
     weaponGroup:null, weaponKey:'fists', whand:(o.male?0:1), grip:(o.male?'reverse':'forward'),
     skel, mixRoot:arm, rest:null };
+  hullify(root);                 // inverted-hull cel outline on every chef part
   scene.add(root);
   return root;
 }
@@ -4854,6 +4906,7 @@ function makeChefGLB(type, o){
     allMats:Object.values(matBy), mats, neon:{ col:0x000000, jacketI:0, skinI:0 }, meshScale:s,
     weaponGroup:null, weaponKey:'fists', whand:(o.male?0:1), grip:(o.male?'reverse':'forward'), rest:null };
   if(type==='chef') buildLocs(root.userData);   // spring-bone driver for the Blender-rigged dreadlock chains
+  hullify(root);                 // inverted-hull cel outline (skinned variant for the GLB rig)
   scene.add(root); return root;
 }
 
@@ -7896,6 +7949,7 @@ function buildKitchen(){
   for(const s of STATIONS) buildStationMesh(s);
   buildDining();
   placeDecorPlants();
+  if(HULL_PROPS) hullify(kitchenGrp);   // cel outline on props -- OFF by default (adds ~1 draw call per prop mesh; mobile-heavy)
 }
 // potted-plant decor (first generated Blender asset). Idempotent + retried from
 // the async loader, so plants appear whether the GLB parses before or after the
@@ -9103,6 +9157,7 @@ function buildBarRoom(){
   BAR_OBST.push({x:BARCTR.x,z:BARCTR.z,rx:BW/2,rz:BD/2+0.35,top:1.25});
   BAR_OBST.push({x:0,z:BBZ+0.4,rx:BW/2,rz:1.0,top:1.2});
   buildBarCrowd(BAR_CROWD_N);
+  if(HULL_PROPS) hullify(R);   // cel outline on props -- OFF by default (mobile draw-call cost)
   return R;
 }
 /* ---- BAR CROWD: a cheap instanced crowd so the room can hold 30+ patrons for a
