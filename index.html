@@ -9516,24 +9516,33 @@ function dayScene(on){
     LIGHT0.bg=(scene.background&&scene.background.getHex)?scene.background.getHex():0x140d07;
     if(scene.fog){ LIGHT0.fogcol=(scene.fog.color&&scene.fog.color.getHex)?scene.fog.color.getHex():0x140d07; LIGHT0.fogfar=scene.fog.far; }
   }
-  // ALL-ARTIFICIAL RIG (no sun): day and brawl share ONE lighting look, so the
-  // room reads the same from the overhead prep cam and the over-shoulder brawl cam.
-  // A dim neutral-purple ambient + coloured practicals (magenta/cyan rims, warm
-  // floor pools, work lamp, stove, neon grid) carry it. The hot directional 'sun'
-  // is gone, so bright horizontal surfaces stop washing to white. `on` now only
-  // swaps the after-hours DRESSING (palms/pergola/bar island), not the light.
-  hemi.intensity = 0.50;
-  key.intensity  = 0.45;
-  fill.intensity = 1.90;   // INTENSE magenta -- the reference look leans hard on this
-  if(hemi.color&&hemi.color.setHex) hemi.color.setHex(0x352a4f);                    // moody neutral-purple sky bounce
-  if(scene.background&&scene.background.setHex) scene.background.setHex(0x0c0912);   // dark neon night -- no golden-hour sky
-  if(scene.fog){ if(scene.fog.color&&scene.fog.color.setHex) scene.fog.color.setHex(0x0c0912); scene.fog.far=70; }
-  if(typeof BLOOM!=='undefined' && BLOOM){ BLOOM.strength=0.42; BLOOM.radius=0.5; BLOOM.threshold=0.86; }
-  const _lamp=arena.userData.lampLight; if(_lamp){ if(LIGHT0.lamp===undefined) LIGHT0.lamp=_lamp.intensity; _lamp.intensity=2.2; }
+  // TWO MOODS, no harsh sun in either:
+  //  - DAY (prep shift) reads as a warm SUNSET -- a LOW warm sun + hot rose/amber sky,
+  //    saturated golden-hour dusk, NOT the old white-washing midday and NOT full night.
+  //  - BRAWL/BAR reads as NIGHT -- dark, no sun, intense magenta (the reference look).
+  // The deepened surfaces + crushed-black grade keep both rich instead of washed.
+  const _lamp=arena.userData.lampLight; if(_lamp && LIGHT0.lamp===undefined) LIGHT0.lamp=_lamp.intensity;
+  if(on){
+    hemi.intensity = 0.62;  key.intensity = 1.25;  fill.intensity = 1.15;   // low WARM sun leads; magenta present but subordinate
+    if(hemi.color&&hemi.color.setHex) hemi.color.setHex(0xc23a2e);          // hot sunset sky bounce (molten orange-red)
+    if(key.color&&key.color.setHex)  key.color.setHex(0xff7a2e);            // low warm sun -- glows, doesn't blast
+    if(scene.background&&scene.background.setHex) scene.background.setHex(0x3a1622);   // dusk fog: deep rose, not bright haze, not black
+    if(scene.fog){ if(scene.fog.color&&scene.fog.color.setHex) scene.fog.color.setHex(0x3a1622); scene.fog.far=82; }
+    if(typeof BLOOM!=='undefined' && BLOOM){ BLOOM.strength=0.32; BLOOM.radius=0.48; BLOOM.threshold=0.84; }
+    if(_lamp) _lamp.intensity=1.5;
+  } else {
+    hemi.intensity = 0.50;  key.intensity = 0.45;  fill.intensity = 1.90;   // no sun; intense magenta leads the night
+    if(hemi.color&&hemi.color.setHex) hemi.color.setHex(0x352a4f);          // moody neutral-purple sky bounce
+    if(key.color&&key.color.setHex)  key.color.setHex(0xff8a3a);
+    if(scene.background&&scene.background.setHex) scene.background.setHex(0x0c0912);   // dark neon night
+    if(scene.fog){ if(scene.fog.color&&scene.fog.color.setHex) scene.fog.color.setHex(0x0c0912); scene.fog.far=70; }
+    if(typeof BLOOM!=='undefined' && BLOOM){ BLOOM.strength=0.42; BLOOM.radius=0.5; BLOOM.threshold=0.86; }
+    if(_lamp) _lamp.intensity=2.2;
+  }
   const bg=arena.userData.barG; if(bg) bg.visible=!on;                                // hide the liquor 'island'
   const pl=arena.userData.palmsG; if(pl) for(const p of pl) p.visible=!on;            // and the after-hours palms
   const pg=arena.userData.pergola; if(pg) for(const m of pg) m.visible=!on;           // and the overhead beams/colonnade
-  if(typeof buildSky==='function') buildSky(currentLocale(), false);                 // always the night view outside -- no daylight washing in
+  if(typeof buildSky==='function') buildSky(currentLocale(), on);                     // sunset sky by day, night sky by brawl
 }
 // bob every board's knife: fast up/down while COOK is held (s._chopping), easing
 // back to a raised rest otherwise. Flecks fly off the food on each down-stroke.
@@ -9776,7 +9785,7 @@ function tick(){
   const flames=arena.userData.stoveFlames||[];
   for(const f of flames){ f.scale.y=1+Math.sin(GAME.t*18+f.userData.b)*0.15; f.material.emissiveIntensity=1.8+Math.sin(GAME.t*22+f.userData.b)*0.6; }
   FLAME_MAT.uniforms.uTime.value=GAME.t;   // the real flames animate entirely in-shader
-  const NIGHTFX=(GAME.mode!=='title');   // neon grid + stove glow drive ALL gameplay now (day too) -- one consistent artificial look
+  const NIGHTFX=!(GAME.mode==='day'||GAME.mode==='plan');   // full neon grid + stove by NIGHT (brawl/bar); calmer by day so the prep shift reads as sunset, not neon night
   stoveGlow.intensity=NIGHTFX?0.8+Math.sin(GAME.t*16)*0.2:0.15;
   // the work-lamp's gentle overhead sway
   const lp=arena.userData.lampPivot;
