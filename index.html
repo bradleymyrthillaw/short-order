@@ -9088,8 +9088,16 @@ function buildBarCrowd(n){
   const old=barRoom.userData.crowd; if(old){ barRoom.remove(old.bodies); barRoom.remove(old.heads); old.bodies.geometry.dispose(); old.heads.geometry.dispose(); }
   const bodyGeo=new THREE.CylinderGeometry(0.17,0.28,1.05,7); bodyGeo.translate(0,0.55,0);
   const headGeo=new THREE.SphereGeometry(0.18,7,6); headGeo.translate(0,1.32,0);
-  const bodies=new THREE.InstancedMesh(bodyGeo, new THREE.MeshStandardMaterial({roughness:.65,metalness:.05}), n);
-  const heads =new THREE.InstancedMesh(headGeo, new THREE.MeshStandardMaterial({color:0x2a2230,roughness:.7}), n);
+  // Bodies SELF-GLOW their shirt colour: route each instance's colour into emissive
+  // via onBeforeCompile so every patron reads in the dark room -- 250 legible figures,
+  // not ~half swallowed by the shadows. (vColor is the per-instance colour under
+  // USE_INSTANCING_COLOR.) Heads get a dim warm glow so they don't vanish either.
+  const bodyMat=new THREE.MeshStandardMaterial({roughness:.6,metalness:.05});
+  bodyMat.onBeforeCompile=(sh)=>{ sh.fragmentShader=sh.fragmentShader.replace(
+    '#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n\ttotalEmissiveRadiance += vColor * 0.85;'); };
+  const headMat=new THREE.MeshStandardMaterial({color:0x120e18, emissive:0x2a2440, emissiveIntensity:0.9, roughness:.7});
+  const bodies=new THREE.InstancedMesh(bodyGeo, bodyMat, n);
+  const heads =new THREE.InstancedMesh(headGeo, headMat, n);
   bodies.castShadow=heads.castShadow=false; bodies.frustumCulled=heads.frustumCulled=false;
   const data=crowdPlacement(n), col=new THREE.Color();
   for(let i=0;i<n;i++){ const d=data[i];
