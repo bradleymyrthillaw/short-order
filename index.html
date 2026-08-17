@@ -917,7 +917,7 @@ const _floorTex=woodFloorTex();
 const floorMat = new THREE.MeshStandardMaterial({ map:_floorTex, emissive:0x2a1a0e, emissiveMap:_floorTex,
     emissiveIntensity:0.4, roughness:.82, metalness:.05 });   // matte warm wood; faint self-illum so it isn't black at night
 const floor = new THREE.Mesh(new THREE.PlaneGeometry(ARENA.w,ARENA.d), floorMat);
-floor.rotation.x=-Math.PI/2; floor.receiveShadow=true; arena.add(floor);
+floor.rotation.x=-Math.PI/2; floor.receiveShadow=true; floor._noHull=true; arena.add(floor);   // no outline on the ground plane
 // no neon scroll/pulse for wood: GRIDFX has no .glow, so the LOOP animation (guarded on GRIDFX.glow) is skipped.
 const GRIDFX = { mat:floorMat, wood:true };
 
@@ -2144,9 +2144,9 @@ function applyDeform(mesh, d, scale){
    mesh overwrites the interior, leaving just the rim. */
 const OUTLINE_COL=new THREE.Color(0x070510);
 const OUTLINE_THICK=0.006;   // clip-space half-units (~a few px at 1080p)
-let HULL_PROPS=false;        // outline PROPS too? off by default -- the environment is hundreds of small
-                             // meshes, so hulling it ~6x's the draw calls (mobile-prohibitive). Characters
-                             // are always outlined. Flip to true (console/build) to cel the whole scene.
+let HULL_PROPS=true;         // outline the ENVIRONMENT (not the chefs). A size gate keeps the cost down
+const HULL_MIN_R=0.35;       // skip meshes smaller than this world-radius (bottles/candles/trim) -- they
+                             // don't read as outlined and each is a draw call; keep the big readable shapes.
 const _outlineFrag='uniform vec3 uCol;\nvoid main(){ gl_FragColor=vec4(uCol,1.0); }';
 function _outlineVert(skinned){ return [
   skinned?'#include <skinning_pars_vertex>':'',
@@ -2170,11 +2170,16 @@ function makeOutlineMat(skinned){
   return m;
 }
 const OUTLINE_MAT=makeOutlineMat(false), OUTLINE_MAT_SKIN=makeOutlineMat(true);
+const _hullS=new THREE.Vector3(), _hullP=new THREE.Vector3(), _hullQ=new THREE.Quaternion();
 function addHull(m){
   if(!m || m._isHull || m._hulled || m.isInstancedMesh || m._noHull || !m.geometry) return;   // instanced crowds handled separately (or not at all)
   const g=m.geometry; if(!g.attributes || !g.attributes.position || !g.attributes.normal) return;
   const mat0=Array.isArray(m.material)?m.material[0]:m.material;
   if(!mat0 || mat0.transparent || mat0.side===THREE.BackSide || mat0.depthWrite===false) return;   // skip glows/particles/sky
+  if(!g.boundingSphere) g.computeBoundingSphere();
+  m.matrixWorld.decompose(_hullP,_hullQ,_hullS);
+  const worldR=(g.boundingSphere?g.boundingSphere.radius:1)*Math.max(_hullS.x,_hullS.y,_hullS.z);
+  if(worldR < HULL_MIN_R) return;                                   // size gate: skip tiny detail meshes
   m._hulled=true;
   const hull = m.isSkinnedMesh ? new THREE.SkinnedMesh(g, OUTLINE_MAT_SKIN) : new THREE.Mesh(g, OUTLINE_MAT);
   if(m.isSkinnedMesh) hull.bind(m.skeleton, m.bindMatrix);
@@ -2182,7 +2187,7 @@ function addHull(m){
   hull.renderOrder=(m.renderOrder||0)-1;
   m.add(hull);   // child at identity -> inherits the mesh's transform (and skeleton, for skinned)
 }
-function hullify(root){ if(!root) return; const list=[]; root.traverse(o=>{ if(o.isMesh && !o._isHull && !o._hulled) list.push(o); }); for(const m of list) addHull(m); }
+function hullify(root){ if(!root) return; root.updateWorldMatrix(true,true); const list=[]; root.traverse(o=>{ if(o.isMesh && !o._isHull && !o._hulled) list.push(o); }); for(const m of list) addHull(m); }
 
 function makeChef(o){
   // NEW: a real mixamorig skeleton (cloned from X_Bot) with the stylized chef
@@ -2290,7 +2295,6 @@ function makeChef(o){
     neon:{ col:0x000000, jacketI:0, skinI:0 },
     weaponGroup:null, weaponKey:'fists', whand:(o.male?0:1), grip:(o.male?'reverse':'forward'),
     skel, mixRoot:arm, rest:null };
-  hullify(root);                 // inverted-hull cel outline on every chef part
   scene.add(root);
   return root;
 }
@@ -4906,7 +4910,6 @@ function makeChefGLB(type, o){
     allMats:Object.values(matBy), mats, neon:{ col:0x000000, jacketI:0, skinI:0 }, meshScale:s,
     weaponGroup:null, weaponKey:'fists', whand:(o.male?0:1), grip:(o.male?'reverse':'forward'), rest:null };
   if(type==='chef') buildLocs(root.userData);   // spring-bone driver for the Blender-rigged dreadlock chains
-  hullify(root);                 // inverted-hull cel outline (skinned variant for the GLB rig)
   scene.add(root); return root;
 }
 
@@ -7949,7 +7952,7 @@ function buildKitchen(){
   for(const s of STATIONS) buildStationMesh(s);
   buildDining();
   placeDecorPlants();
-  if(HULL_PROPS) hullify(kitchenGrp);   // cel outline on props -- OFF by default (adds ~1 draw call per prop mesh; mobile-heavy)
+  if(HULL_PROPS) hullify(kitchenGrp);   // cel outline on the kitchen furniture (stations, dining tables, pass)
 }
 // potted-plant decor (first generated Blender asset). Idempotent + retried from
 // the async loader, so plants appear whether the GLB parses before or after the
@@ -9068,7 +9071,7 @@ function buildBarRoom(){
   const NEON={ blue:0x2f6bff, cyan:0x2de2e6, mag:0xff2fb0, purple:0x9a4dff, pink:0xff5d8f, green:0x36ff9a, amber:0xffb020 };
   const emat=(hex,i)=>new THREE.MeshStandardMaterial({color:hex,emissive:hex,emissiveIntensity:i==null?2.5:i});
   // ---- floor: a glowing SYNTHWAVE GRID over near-black boards + neon edge strips
-  const floor=new THREE.Mesh(new THREE.BoxGeometry(W*2,0.1,D*2), dmat(0x07090f,.9,.03)); floor.position.y=-0.05; floor.receiveShadow=true; R.add(floor);
+  const floor=new THREE.Mesh(new THREE.BoxGeometry(W*2,0.1,D*2), dmat(0x07090f,.9,.03)); floor.position.y=-0.05; floor.receiveShadow=true; floor._noHull=true; R.add(floor);
   { const gtex=neonGridTex(); const grid=new THREE.Mesh(new THREE.PlaneGeometry(W*2,D*2), new THREE.MeshStandardMaterial({map:gtex,emissiveMap:gtex,emissive:0xffffff,emissiveIntensity:0.9,color:0x101026,roughness:.5})); grid.rotation.x=-Math.PI/2; grid.position.y=0.012; R.add(grid); }
   for(const s of [[0,-D+0.7,W*2-1.4,0.1,NEON.mag],[0,D-0.7,W*2-1.4,0.1,NEON.cyan],[-W+0.7,0,0.1,D*2-1.4,NEON.purple],[W-0.7,0,0.1,D*2-1.4,NEON.green]]){
     const st=new THREE.Mesh(new THREE.BoxGeometry(s[2],0.04,s[3]), emat(s[4])); st.position.set(s[0],0.04,s[1]); R.add(st); }
