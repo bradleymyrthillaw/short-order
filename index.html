@@ -3847,6 +3847,7 @@ function updatePlayer(dt, pad, actor){
     if(_grabLab===undefined) _grabLab=document.querySelector('[data-b="pickup"] .lab');
     if(_grabLab){ let txt='GRAB';
       if(!COOKING){ const _al=Math.hypot(mv.x,mv.z)||1; const v=predictGrabVerb(P, moving, mv.x/_al, mv.z/_al); if(v) txt=v; }
+      else if(GAME.mode==='after'){ txt = DAY.carry ? 'SERVE' : 'BOTTLE'; }   // bar service: tell the player the button grabs a bottle / serves the table
       if(_grabLab.textContent!==txt) _grabLab.textContent=txt; }
   }
   if(!COOKING && !P.attack && (pad.pickup||pad.rush||(!REMOTE&&(tapK('f')||consume('pickupEdge'))))){   // no grab/throw/drop/pickup mid-swing
@@ -9468,6 +9469,10 @@ function startBarService(){
   GAME.mode='after'; AFTER.on=true; AFTER.postBrawl=true; AFTER.fighting=false; GAME.barFight=false;
   for(const e of enemies) scene.remove(e.chef); enemies.length=0;   // leave the brawl's corpses on the terrace, not in the bar
   buildBarCrowd(clamp(Math.round(70+beli()*30),50,320));   // a good rating packs the house (~250 at a solid 6, up to 320); a dive thins out
+  if(barRoom && !barRoom.userData.ctrBeacon){   // glowing marker over the counter so the player SEES where to grab bottles (it's a long way back)
+    const mk=new THREE.Mesh(new THREE.ConeGeometry(0.26,0.6,4), new THREE.MeshStandardMaterial({color:0xffd23d,emissive:0xffd23d,emissiveIntensity:2.4}));
+    mk.rotation.x=Math.PI; mk.position.set(BARCTR.x,2.8,BARCTR.z); barRoom.add(mk); barRoom.userData.ctrBeacon=mk;
+  }
   AFTER.t=60; AFTER.cash=0; AFTER.bottles=0; AFTER.heat=0; AFTER.riot=false; AFTER.spawnT=1.0;
   for(const grp of AFTER.groups){ if(grp.g) scene.remove(grp.g); if(grp.mark) scene.remove(grp.mark); } AFTER.groups.length=0;
   if(player){ player.wpn='fists'; player.dur=Infinity; equip(player.chef,'fists'); player.attack=null; player.hold=null; player.dead=false; }
@@ -9553,7 +9558,7 @@ function nightDemand(){ return Math.max(0.35, Math.min(1.4, 0.40+0.12*(beli()-2)
 function nightBottlePrice(){ const b=beli(); let m;
   if(b>=6) m=1+0.025*(b-6); else if(b>=4) m=0.55+0.225*(b-4); else m=0.15+0.075*Math.max(0,b-1);
   return Math.max(60, Math.round(360*m*(1+0.2*upLvl('tipjar'))/10)*10); }
-function heatRate(){ return Math.max(0,(5.5-beli())/4.5)*0.055; }
+function heatRate(){ return 0.03 + Math.max(0,(5.5-beli())/4.5)*0.055; }   // BASELINE 0.03 so heat always climbs -> a bar fight reliably kicks off (~33s) instead of the night fizzling to morning at beli>=5.5 where the old rate was 0
 function chuggerChance(){ return Math.min(0.6, 0.05+Math.max(0,4-beli())*0.08); }
 function startAfterHours(){
   dayCleanup(); GAME.mode='after'; AFTER.on=true; AFTER.t=60; AFTER.cash=0; AFTER.bottles=0; AFTER.heat=0; AFTER.riot=false; AFTER.spawnT=1.5;
@@ -9581,7 +9586,7 @@ function spawnPartyGroup(){
   AFTER.groups.push(g); return g;
 }
 function afterVerbs(P,pad,dt){
-  const tap=pad.pickup||pad.rush||tapK('f')||tapK('j')||consume('pickupEdge');
+  const tap=pad.pickup||pad.rush||tapK('f')||tapK('j')||consume('pickupEdge')||consume('cookEdge');   // GRAB or COOK (or F/J/gamepad) all grab+serve -- whichever button they press works
   if(!tap) return;
   const c=DAY.carry;
   if(!c){                                                          // grab a bottle: any liquor shelf, else the pass
@@ -9589,11 +9594,11 @@ function afterVerbs(P,pad,dt){
     for(const st of STATIONS){ if(st.kind==='crate'&&['whiskey','gin'].includes(st.ingredient)&&!st.broken){
       if(Math.hypot(st.x-P.pos.x,st.z-P.pos.z)<2.3){ src=st.ingredient; break; } } }
     if(!src && nearPass(P)) src='whiskey';
-    if(!src && barRoom && barRoom.visible && Math.hypot(BARCTR.x-P.pos.x,BARCTR.z-P.pos.z)<3.2) src='whiskey';   // grab off the back bar counter
+    if(!src && barRoom && barRoom.visible && Math.hypot(BARCTR.x-P.pos.x,BARCTR.z-P.pos.z)<4.5) src='whiskey';   // grab off the back bar counter (widened 3.2->4.5 so it's forgiving to find)
     if(src){ DAY.carry={kind:'ing', id:src, state:'raw'}; updateCarryMesh(); if(AC)sfx.pickup(); toast('BOTTLE'); return; }
   }
   if(c && c.kind==='ing'){                                         // run it to the thirstiest table in reach
-    let best=null,bd=3.4;
+    let best=null,bd=4.2;                                          // serve reach widened 3.4->4.2
     for(const g of AFTER.groups){ if(g.state!=='waiting') continue;
       const d=Math.hypot(g.x-P.pos.x,g.z-P.pos.z); if(d<bd){ bd=d; best=g; } }
     if(best){ const pay=nightBottlePrice(); AFTER.cash+=pay; AFTER.bottles++;
@@ -9611,8 +9616,9 @@ function updateAfter(dt){
   AFTER.spawnT-=dt;
   if(AFTER.t>0 && AFTER.spawnT<=0){ if(Math.random()<nightDemand()) spawnPartyGroup(); AFTER.spawnT=rand(3.0,5.5)/Math.max(0.4,nightDemand()); }
   AFTER.heat=Math.min(1, AFTER.heat + heatRate()*dt);
+  { const beac=barRoom&&barRoom.userData.ctrBeacon; if(beac&&barRoom.visible){ beac.position.y=2.7+Math.sin(GAME.t*4)*0.15; beac.rotation.y+=dt*2.6; } }   // bob/spin the pickup beacon
   for(let i=AFTER.groups.length-1;i>=0;i--){ const g=AFTER.groups[i];
-    if(g.state==='waiting'){ g.patience-=dt*0.055;
+    if(g.state==='waiting'){ g.patience-=dt*0.035;   // slower (0.055->0.035): ~28s to walk, not 18 -- the room is big and the runs are long
       if(g.mark){ g.mark.position.y=2.5+Math.sin(GAME.t*4+i)*0.12; g.mark.rotation.z+=dt*2.5; }
       if(g.patience<=0){ AFTER.heat=Math.min(1,AFTER.heat+0.14); toast('a table walked. heat rising.');
         if(g.mark) scene.remove(g.mark); scene.remove(g.g); AFTER.groups.splice(i,1); } }
