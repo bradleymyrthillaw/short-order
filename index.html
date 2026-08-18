@@ -3219,7 +3219,8 @@ if(lookZone){
 /* ================================================================ CAMERA */
 const CAM={ yaw:Math.PI, pitch:0.31, dist:4.9, height:2.9, lockK:0, aimK:0, barK:0, look:new V3(), pos:new V3() };  // pitch: mouse-look vertical; aimK: tight over-shoulder blend while aiming; barK: committed over-shoulder framing through the bar loop
 const camFwd=new V3(), camRight=new V3();
-function updateCameraVectors(){ camFwd.set(Math.sin(CAM.yaw),0,Math.cos(CAM.yaw)); camRight.set(-camFwd.z,0,camFwd.x); }
+function updateCameraVectors(){ if(!Number.isFinite(CAM.yaw)) CAM.yaw=0; if(!Number.isFinite(CAM.pitch)) CAM.pitch=0;   // a NaN yaw would poison camFwd -> player.vel (0*NaN) -> pos -> the whole skinned rig -> frozen frame
+  camFwd.set(Math.sin(CAM.yaw),0,Math.cos(CAM.yaw)); camRight.set(-camFwd.z,0,camFwd.x); }
 
 /* ================================================================ HELPERS */
 // Props are platforms: each OBST has a `top` (surface height). collide() only
@@ -3909,13 +3910,14 @@ function updatePlayer(dt, pad, actor){
     // faces, snapping onto the nearest enemy in a frontal cone. This is what fixes shots
     // flying off to the side -- the gun now always shoots IN FRONT of you (camera fwd).
     if(!aiming && !MOUSE.locked){
-      const camH=CAM.yaw;                                    // camera-forward heading (camFwd = sin/cos of CAM.yaw)
+      const camH=Number.isFinite(CAM.yaw)?CAM.yaw:(Number.isFinite(P.facing)?P.facing:0);   // never aim off a NaN camera
       const t=(P.lockOn&&!P.lockOn.dead)?P.lockOn:nearestEnemy(P.pos, camH, 0.7);   // auto-aim only inside a ~40deg front cone
       P._aimAng = t ? Math.atan2(t.pos.x-P.pos.x, t.pos.z-P.pos.z) : camH;
       P._aimTgt = t||null; P._aimLock=null; P._aimFall=null;
       aiming=true;
     }
-    if(aiming){ P._gunAiming=true; if(P._aimAng!=null) P.facing=angLerp(P.facing, P._aimAng, Math.min(1,dt*20)); }   // face the aim (snappier so the muzzle tracks forward)
+    if(!Number.isFinite(P._aimAng)) P._aimAng = Number.isFinite(CAM.yaw)?CAM.yaw:(Number.isFinite(P.facing)?P.facing:0);   // hard guard: a NaN aim would freeze the gun rig (NaN skinned bones)
+    if(aiming){ P._gunAiming=true; P.facing=angLerp(P.facing, P._aimAng, Math.min(1,dt*20)); }   // face the aim (snappier so the muzzle tracks forward)
     // shot PITCH: converge on the target's chest height (or the crosshair point) so shots from the
     // pass at floor enemies angle DOWN instead of sailing over their heads
     const my=P.pos.y+1.15;
@@ -5036,7 +5038,9 @@ const _ikT=new V3(), _ikS=new V3(), _ikE=new V3(), _ikH=new V3(), _ikA=new V3(),
 // keeping the clip's elbow side. Stateless per frame -- a delta on the animated pose.
 function armReachIK(ua,fa,ha){
   if(!ua||!fa||!ha) return;
+  if(!Number.isFinite(_ikT.x)||!Number.isFinite(_ikT.y)||!Number.isFinite(_ikT.z)) return;   // NEVER drive the skinned rig with a NaN target -> NaN bone matrices freeze real GPUs
   ua.getWorldPosition(_ikS); fa.getWorldPosition(_ikE); ha.getWorldPosition(_ikH);
+  if(!Number.isFinite(_ikS.x)||!Number.isFinite(_ikE.x)||!Number.isFinite(_ikH.x)) return;   // bail if the arm's own world pose is already corrupt
   const L1=_ikS.distanceTo(_ikE)||1e-4, L2=_ikE.distanceTo(_ikH)||1e-4;
   _gv.subVectors(_ikT,_ikS); let d=_gv.length()||1e-4;
   const dMax=(L1+L2)*0.999; if(d>dMax){ _gv.multiplyScalar(dMax/d); d=dMax; _ikT.copy(_ikS).add(_gv); }
@@ -5348,6 +5352,10 @@ function poseChef(a, isPlayer, dt){
   // We only set the root transform + a thin cosmetic layer here; the old procedural
   // posing (feet IK, arm IK, pendulum) is retired (kept as poseChefOld for reference).
   const c=a.chef, u=c.userData;
+  // SAFETY NET: a non-finite position/facing here poisons the chef root -> every skinned bone
+  // becomes NaN -> the frame freezes on real GPUs. Recover instead of shipping NaN to the rig.
+  if(a.pos && !(Number.isFinite(a.pos.x)&&Number.isFinite(a.pos.y)&&Number.isFinite(a.pos.z))){ a.pos.set(0,0,0); if(a.vel) a.vel.set(0,0,0); }
+  if(!Number.isFinite(a.facing)) a.facing=0;
   c.position.copy(a.pos); c.rotation.y=a.facing;
   if((a._tornado||0)>0) c.rotation.y = a.facing + (0.5-a._tornado)*40;   // KITCHEN TORNADO: whirl the whole body
   if(!u || !u.mixRoot) return;                          // placeholder (skeleton not ready)
@@ -5385,7 +5393,8 @@ function poseChef(a, isPlayer, dt){
     if(wg && u.weaponKey==='spudgun' && u.rigType){
       let kk=a._gunKick||0;
       if(kk>0.001){ kk*=Math.exp(-dt*13); a._gunKick=kk; } else { kk=0; a._gunKick=0; }
-      const yaw=(a._aimAng!=null?a._aimAng:a.facing);
+      let yaw=(a._aimAng!=null?a._aimAng:a.facing);
+      if(!Number.isFinite(yaw)) yaw=Number.isFinite(a.facing)?a.facing:0;   // a NaN aim must never reach the barrel/arm math -> NaN skinned bones = frozen frame on real GPUs
       const sk=u.skel, WH=(u.whand==null?1:u.whand), wS=(WH===0?'Left':'Right'), sS=(WH===0?'Right':'Left');
       // WEAPON-ARM reach: hold the gun hand OUT in front of the chest along the aim, so the gun is
       // braced forward instead of tucked in at the body (the idle clip alone doesn't extend it).
