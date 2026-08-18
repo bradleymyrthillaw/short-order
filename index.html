@@ -3499,17 +3499,22 @@ function resolveHit(A, isPlayer){
     // is a reasonable body/head split; a tuning dial -- could read the attacker
     // swing shape's strike-Y for a per-swing height later)
     applyImpact(T, ang, (heavy?1.4:0.85)*(blocked?0.4:1)*Emul, 1.4, weight);
-    // UNIVERSAL HEAVY LAUNCH: EVERY clean heavy sends them skidding back, and the
-    // distance scales with the weapon's heft -- a spatula just nudges them a step,
-    // while the frozen meat club and giant rolling pin bowl them clear across the
-    // deck (the _thrown skid plows through anyone behind; see updateEnemy). No HP
-    // gate; a killing blow still ragdolls. Bosses are too heavy to launch.
-    if(isPlayer && heavy && !blocked && !boss && T.hp>0){
-      const lv=7+heft*14;                                        // launch speed climbs with heft: spatula(.20)~9.8, cast iron(1.0)~21, meat club(.95)/rolling pin(.90) just under
-      T.vel.x=Math.sin(ang)*lv; T.vel.z=Math.cos(ang)*lv;        // SET (overrides the lighter knockback shove above) so distance tracks heft cleanly
-      T._thrown={t:0.28+heft*0.42, ang}; T._thrownHit=null;      // heavier weapon = longer slide too (spatula ~0.36s, rolling pin ~0.66s)
-      T.stagger=Math.max(T.stagger, 0.6+heft*0.4);
-      if(heft>0.55){ ring(cpos,0xffffff,1.5+heft*0.7); popWord({x:T.pos.x,y:1.9,z:T.pos.z},'LAUNCH!','#ffe6a0',24); }   // the big irons earn the call-out; light weapons just tap them back
+    // UNIVERSAL HEAVY LAUNCH: EVERY clean heavy sends them flying back, distance
+    // scaling with the weapon's heft -- a spatula just nudges them a step, the frozen
+    // meat club / giant rolling pin bowl them clear across the deck. A killing heavy
+    // launches EVEN HARDER: the corpse is flung furthest of all (a heavy weapon that
+    // one-shots is the one that should send the body sailing). Bosses don't launch.
+    if(isPlayer && heavy && !blocked && !boss){
+      if(T.hp>0){                                                // survived -> the living bowling skid (see updateEnemy _thrown)
+        const lv=7+heft*14;                                      // spatula(.20)~9.8, cast iron(1.0)~21, meat club(.95)/rolling pin(.90) just under
+        T.vel.x=Math.sin(ang)*lv; T.vel.z=Math.cos(ang)*lv;
+        T._thrown={t:0.28+heft*0.42, ang}; T._thrownHit=null;
+        T.stagger=Math.max(T.stagger, 0.6+heft*0.4);
+      } else {                                                   // killed -> fling the RAGDOLL across the deck (dead branch skids the whole corpse)
+        const lv=10+heft*22;                                     // furthest of all: cast iron ~32, meat club ~30.9, rolling pin ~29.8
+        T._deadSkid={ x:Math.sin(ang)*lv, z:Math.cos(ang)*lv };
+      }
+      if(heft>0.55){ ring(cpos,0xffffff,1.5+heft*0.7); popWord({x:T.pos.x,y:1.9,z:T.pos.z},'LAUNCH!','#ffe6a0',24); }   // the big irons earn the call-out
     }
     // weapon BITE: the attacker's blade jolts back on contact instead of sailing
     // through -- a short recoil kick on the weaponGroup (integrated in poseChef)
@@ -3597,7 +3602,7 @@ function killChef(T, ang){
   if(T.hasToken){ T.hasToken=false; tokensUsed--; }
   T.vel.x+=Math.sin(ang)*5; T.vel.z+=Math.cos(ang)*5;
   T._toppleZ=rand(-0.5,0.5);
-  buildRagdoll(T); if(T.rag) ragImpulse(T, _rp1.set(Math.sin(ang),0.15,Math.cos(ang)).normalize(), 1.0);
+  buildRagdoll(T); if(T.rag) ragImpulse(T, _rp1.set(Math.sin(ang),0.15,Math.cos(ang)).normalize(), T._deadSkid?2.6:1.0);   // a launched corpse flails harder as it sails
   const p=T.pos.clone(); p.y=1.2; burst(p,16,0xff3b30,1.3); shake(0.5); sfx.down();
   FX.slowT=Math.max(FX.slowT,0.12);   // the finishing blow earns the slow-mo tail
   impactFrames(4, 0xff6a1e, 0x140c07); hitPost(0.8, 0xff6a1e); kitchenBump(0.6); haptic(0.7,0.5,140);
@@ -3900,13 +3905,17 @@ function updatePlayer(dt, pad, actor){
         const t=(P.lockOn&&!P.lockOn.dead)?P.lockOn:nearestEnemy(P.pos,P.facing,null); P._aimTgt=t||null; }
     }
     if(ax||az){ const aw=new V3(); aw.addScaledVector(camRight,ax); aw.addScaledVector(camFwd,-az); if(aw.lengthSq()>0.04) P._aimAng=Math.atan2(aw.x,aw.z); }
-    // soft auto-aim: pressed fire with no stick/crosshair -> lock onto lock-on / nearest enemy
-    if(!aiming && wantFire && !MOUSE.locked){
-      const t=(P.lockOn&&!P.lockOn.dead)?P.lockOn:nearestEnemy(P.pos,P.facing,null);
-      if(t){ P._aimAng=Math.atan2(t.pos.x-P.pos.x, t.pos.z-P.pos.z); P._aimTgt=t; P._aimLock=null; P._aimFall=null; }
+    // DEFAULT AIM (no stick / not pointer-locked): point straight where the CAMERA
+    // faces, snapping onto the nearest enemy in a frontal cone. This is what fixes shots
+    // flying off to the side -- the gun now always shoots IN FRONT of you (camera fwd).
+    if(!aiming && !MOUSE.locked){
+      const camH=CAM.yaw;                                    // camera-forward heading (camFwd = sin/cos of CAM.yaw)
+      const t=(P.lockOn&&!P.lockOn.dead)?P.lockOn:nearestEnemy(P.pos, camH, 0.7);   // auto-aim only inside a ~40deg front cone
+      P._aimAng = t ? Math.atan2(t.pos.x-P.pos.x, t.pos.z-P.pos.z) : camH;
+      P._aimTgt = t||null; P._aimLock=null; P._aimFall=null;
       aiming=true;
     }
-    if(aiming){ P._gunAiming=true; if(P._aimAng!=null) P.facing=angLerp(P.facing, P._aimAng, Math.min(1,dt*16)); }   // interpolate, never snap
+    if(aiming){ P._gunAiming=true; if(P._aimAng!=null) P.facing=angLerp(P.facing, P._aimAng, Math.min(1,dt*20)); }   // face the aim (snappier so the muzzle tracks forward)
     // shot PITCH: converge on the target's chest height (or the crosshair point) so shots from the
     // pass at floor enemies angle DOWN instead of sailing over their heads
     const my=P.pos.y+1.15;
@@ -3928,6 +3937,8 @@ function updatePlayer(dt, pad, actor){
     }
     if(!wantFire && P._fireCD<0) P._fireCD=0;                  // idle: keep the next tap instant, don't run the CD deep negative
   }
+  // CROSSHAIR: show it whenever the gun is out (mobile had none), or under pointer-lock.
+  { const xh=document.getElementById('xhair'); if(xh){ const showX = MOUSE.locked || (P.wpn==='spudgun' && !P.dead); xh.style.display = showX?'block':'none'; } }
   // ----- attacks (Cross light / Square heavy / touch) -----
   let wantLight=!COOKING && P.wpn!=='spudgun' && (pad.light||(!REMOTE&&(tapK('j')||MOUSE.l||consume('lightEdge')))); if(!REMOTE) MOUSE.l=false;
   let wantHeavy=!COOKING && P.wpn!=='spudgun' && (pad.heavy||(!REMOTE&&(tapK('k')||MOUSE.r||consume('heavyEdge')))); if(!REMOTE) MOUSE.r=false;   // gun's heavy is the big shot (handled above), not a swing
@@ -4251,6 +4262,13 @@ function updateEnemy(e, dt){
     // clean glide, not a velocity spike; gravity (in ragStep) still arcs it down.
     if(e._overboard && e.rag){ const d=e._overboard, s=8.5*dt;
       for(const kk in e.rag.pts){ const pt=e.rag.pts[kk]; pt.p.x+=d.x*s; pt.p.z+=d.z*s; pt.o.x+=d.x*s; pt.o.z+=d.z*s; } }
+    // LAUNCHED CORPSE: a body dropped by a big heavy keeps sailing -- glide the whole
+    // ragdoll across the deck (heft set the speed in resolveHit), decaying, while
+    // ragStep keeps it flopping and the wall clamp stops it. (Not while going overboard.)
+    if(e._deadSkid && e.rag && !e._overboard){ const v=e._deadSkid, s=dt;
+      for(const kk in e.rag.pts){ const pt=e.rag.pts[kk]; pt.p.x+=v.x*s; pt.p.z+=v.z*s; pt.o.x+=v.x*s; pt.o.z+=v.z*s; }
+      v.x*=Math.exp(-2.2*dt); v.z*=Math.exp(-2.2*dt);
+      if(Math.hypot(v.x,v.z)<0.5) e._deadSkid=null; }
     if(e._splash){ e._splash.t-=dt; if(e._splash.t<=0){ waterSplash(e._splash.x+e._splash.dx*4.6, e._splash.z+e._splash.dz*4.6); e._splash=null; } }   // hits the bay -> water burst
     e.chef.position.copy(e.pos); e.chef.rotation.y=e.facing;   // frame for world<->local
     if(e.deadT<1.6) updateDead(e, dt);
@@ -5794,7 +5812,8 @@ function solveArmsIK(a, dt, atk){
     // its own grip archetype (greatsword / bo-staff / dagger / short-sword / shield /
     // boxer); two-handers bring the off-hand onto the weapon. All sign-relative so a
     // lefty mirrors for free.
-    const ck = combatK * (twoH?1:(1-Math.min(run,0.8))) * (1-g);   // two-hander keeps the grip strong while running
+    const gunBrace = (isPlayer && a.wpn==='spudgun' && a._gunAiming) ? 1 : 0;   // gun always held ready while aiming, even with no enemy in combat range
+    const ck = Math.max(combatK, gunBrace) * (twoH?1:(1-Math.min(run,0.8))) * (1-g);   // two-hander keeps the grip strong while running
     if(ck>0.01 && !atk && !a.slam && (a.slamHit||0)<=0 && a.state!=='holding' && a.state!=='held' && !a.tackle){
       const WH=(u.whand==null?1:u.whand), isWH=(i===WH), wk=a.wpn;
       let sx=tx, sy=ty, sz=tz;
@@ -5809,6 +5828,8 @@ function solveArmsIK(a, dt, atk){
         if(isWH){ sx=A.sh.x*0.7; sy=1.24; sz=0.54; } else { sx=A.sh.x*1.0; sy=1.08; sz=0.22; }
       } else if(wk==='potlid'){                              // SHIELD (lid up front)
         if(isWH){ sx=A.sh.x*0.4; sy=1.40; sz=0.50; } else { sx=A.sh.x*1.05; sy=1.06; sz=0.18; }
+      } else if(wk==='spudgun'){                             // SPUD GUN -- braced two-handed, aimed forward (was falling into the fists guard: grip looked wrong)
+        if(isWH){ sx=A.sh.x*0.42; sy=1.34; sz=0.66; } else { sx=A.sh.x*0.06; sy=1.28; sz=0.56; }   // WH out front on the grip, OH bracing under the barrel
       } else {                                               // FISTS -> boxer guard
         sx=sign*0.15 + A.sh.x*0.2; sy=1.54; sz=0.42;
       }
