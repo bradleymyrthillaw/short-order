@@ -5031,7 +5031,33 @@ const _lv=new V3(), _ld=new V3(), _lbp=new V3(), _lrd=new V3(), _ltd=new V3(),
 const _gq=new THREE.Quaternion(), _gqh=new THREE.Quaternion(), _ge=new THREE.Euler(), _gv=new V3();   // world-aim gun scratch
 const _wtp=new V3();   // weapon-trail tip scratch
 const _ikT=new V3(), _ikS=new V3(), _ikE=new V3(), _ikH=new V3(), _ikA=new V3(), _ikX=new V3(), _ikD=new V3(),
-      _ikQ=new THREE.Quaternion(), _ikQ2=new THREE.Quaternion(), _ikQ3=new THREE.Quaternion();       // support-hand IK scratch
+      _ikQ=new THREE.Quaternion(), _ikQ2=new THREE.Quaternion(), _ikQ3=new THREE.Quaternion();       // hand IK scratch
+// Two-bone IK: rotate upper(ua)+fore(fa) so hand(ha) reaches the WORLD target in _ikT,
+// keeping the clip's elbow side. Stateless per frame -- a delta on the animated pose.
+function armReachIK(ua,fa,ha){
+  if(!ua||!fa||!ha) return;
+  ua.getWorldPosition(_ikS); fa.getWorldPosition(_ikE); ha.getWorldPosition(_ikH);
+  const L1=_ikS.distanceTo(_ikE)||1e-4, L2=_ikE.distanceTo(_ikH)||1e-4;
+  _gv.subVectors(_ikT,_ikS); let d=_gv.length()||1e-4;
+  const dMax=(L1+L2)*0.999; if(d>dMax){ _gv.multiplyScalar(dMax/d); d=dMax; _ikT.copy(_ikS).add(_gv); }
+  _gv.divideScalar(d);                                           // shoulder->target dir
+  const cosA=Math.min(1,Math.max(-1,(L1*L1+d*d-L2*L2)/(2*L1*d)));
+  _ikA.copy(_ikE).sub(_ikS).normalize();                         // current upper-arm dir
+  _ikX.crossVectors(_gv,_ikA); if(_ikX.lengthSq()<1e-6) _ikX.set(0,1,0).cross(_gv); _ikX.normalize();
+  _ikD.copy(_gv).applyAxisAngle(_ikX, Math.acos(cosA));          // desired upper-arm dir
+  _ikQ.setFromUnitVectors(_ikA,_ikD);
+  ua.getWorldQuaternion(_ikQ2); _ikQ2.premultiply(_ikQ);
+  ua.parent.getWorldQuaternion(_ikQ3).invert();
+  ua.quaternion.multiplyQuaternions(_ikQ3,_ikQ2); ua.updateMatrix();
+  fa.updateWorldMatrix(true,false); ha.updateWorldMatrix(true,false);
+  fa.getWorldPosition(_ikE); ha.getWorldPosition(_ikH);
+  _ikD.subVectors(_ikT,_ikE).normalize(); _ikA.subVectors(_ikH,_ikE).normalize();
+  _ikQ.setFromUnitVectors(_ikA,_ikD);
+  fa.getWorldQuaternion(_ikQ2); _ikQ2.premultiply(_ikQ);
+  fa.parent.getWorldQuaternion(_ikQ3).invert();
+  fa.quaternion.multiplyQuaternions(_ikQ3,_ikQ2); fa.updateMatrix();
+  ha.updateWorldMatrix(true,false);
+}
 
 // Collect the hair bone chains (loc{strand}_{bone}) + cache bind-pose data for the spring.
 function buildLocs(u){
@@ -5360,42 +5386,28 @@ function poseChef(a, isPlayer, dt){
       let kk=a._gunKick||0;
       if(kk>0.001){ kk*=Math.exp(-dt*13); a._gunKick=kk; } else { kk=0; a._gunKick=0; }
       const yaw=(a._aimAng!=null?a._aimAng:a.facing);
+      const sk=u.skel, WH=(u.whand==null?1:u.whand), wS=(WH===0?'Left':'Right'), sS=(WH===0?'Right':'Left');
+      // WEAPON-ARM reach: hold the gun hand OUT in front of the chest along the aim, so the gun is
+      // braced forward instead of tucked in at the body (the idle clip alone doesn't extend it).
+      // Height is anchored to the actual shoulder bone -- the rig is chibi-scaled, so a fixed world
+      // height lands at the wrong spot (1.30 was literally above her head).
+      { const fx=Math.sin(yaw), fz=Math.cos(yaw), reach=0.30-0.05*kk;
+        const wsh=sk['mixamorig'+wS+'Arm'], shY=wsh?wsh.getWorldPosition(_ikS).y:(a.pos.y+1.05);
+        _ikT.set(a.pos.x+fx*reach, shY-0.05, a.pos.z+fz*reach);   // forward of the body centreline, just below shoulder height
+        armReachIK(wsh, sk['mixamorig'+wS+'ForeArm'], sk['mixamorig'+wS+'Hand']); }
+      // BARREL: world-aim the muzzle exactly along the shot. The Mixamo hand bone's local axes run
+      // +Y up the fingers (not +Z forward), so a static parent-space rotation would leave the gun
+      // lying sideways -- instead we convert the desired WORLD orientation into hand-local.
       _ge.set(0.06-0.42*kk, yaw, 0, 'YXZ');                 // slight down-tilt at rest; kick flips the muzzle up
       _gq.setFromEuler(_ge);                                // world orientation: +Z barrel -> aim direction
       wg.parent.getWorldQuaternion(_gqh).invert();
       wg.quaternion.multiplyQuaternions(_gqh,_gq);          // local = inv(handWorld) * desiredWorld
       _gv.set(0,0,1).applyQuaternion(wg.quaternion);        // barrel dir in hand-local
       wg.position.set(0,0.02,0.05).addScaledVector(_gv,-0.085*kk);   // grip in the palm + kick back-slide
-      // SUPPORT-HAND IK: the clip has no idea where our world-aimed gun is, so the left fist floats.
-      // Two-bone IK (upper arm + forearm) pulls the left hand onto the pump foregrip every frame.
+      // SUPPORT-HAND IK: the OFF hand grips the pump foregrip (the clip floats it otherwise).
       wg.updateMatrix(); wg.updateWorldMatrix(true,false);
       _ikT.set(0,-0.06,0.34).applyMatrix4(wg.matrixWorld);            // pump grip point (gun-local)
-      const sk=u.skel, ua=sk['mixamorigLeftArm'], fa=sk['mixamorigLeftForeArm'], ha=sk['mixamorigLeftHand'];
-      if(ua&&fa&&ha){
-        ua.getWorldPosition(_ikS); fa.getWorldPosition(_ikE); ha.getWorldPosition(_ikH);
-        const L1=_ikS.distanceTo(_ikE)||1e-4, L2=_ikE.distanceTo(_ikH)||1e-4;
-        _gv.subVectors(_ikT,_ikS); let d=_gv.length()||1e-4;
-        const dMax=(L1+L2)*0.999; if(d>dMax){ _gv.multiplyScalar(dMax/d); d=dMax; _ikT.copy(_ikS).add(_gv); }
-        _gv.divideScalar(d);                                          // shoulder->target dir
-        const cosA=Math.min(1,Math.max(-1,(L1*L1+d*d-L2*L2)/(2*L1*d)));
-        _ikA.copy(_ikE).sub(_ikS).normalize();                        // current upper-arm dir
-        _ikX.crossVectors(_gv,_ikA);                                  // elbow plane axis (keeps the clip's elbow side)
-        if(_ikX.lengthSq()<1e-6) _ikX.set(0,1,0).cross(_gv);
-        _ikX.normalize();
-        _ikD.copy(_gv).applyAxisAngle(_ikX, Math.acos(cosA));         // desired upper-arm dir
-        _ikQ.setFromUnitVectors(_ikA,_ikD);                           // delta on the animated pose (stateless per frame)
-        ua.getWorldQuaternion(_ikQ2); _ikQ2.premultiply(_ikQ);
-        ua.parent.getWorldQuaternion(_ikQ3).invert();
-        ua.quaternion.multiplyQuaternions(_ikQ3,_ikQ2); ua.updateMatrix();
-        fa.updateWorldMatrix(true,false); ha.updateWorldMatrix(true,false);
-        fa.getWorldPosition(_ikE); ha.getWorldPosition(_ikH);
-        _ikD.subVectors(_ikT,_ikE).normalize();                       // desired forearm dir
-        _ikA.subVectors(_ikH,_ikE).normalize();
-        _ikQ.setFromUnitVectors(_ikA,_ikD);
-        fa.getWorldQuaternion(_ikQ2); _ikQ2.premultiply(_ikQ);
-        fa.parent.getWorldQuaternion(_ikQ3).invert();
-        fa.quaternion.multiplyQuaternions(_ikQ3,_ikQ2); fa.updateMatrix();
-      }
+      armReachIK(sk['mixamorig'+sS+'Arm'], sk['mixamorig'+sS+'ForeArm'], sk['mixamorig'+sS+'Hand']);
     }
     else if(wg && wg.userData.base){ const base=wg.userData.base; let kk=a._gunKick||0;   // non-GLB fallback: simple local kick
       if(kk>0.001){ kk*=Math.exp(-dt*13); a._gunKick=kk; wg.position.z=base.z-0.085*kk; wg.rotation.x=base.rx-0.42*kk; }
@@ -5812,8 +5824,7 @@ function solveArmsIK(a, dt, atk){
     // its own grip archetype (greatsword / bo-staff / dagger / short-sword / shield /
     // boxer); two-handers bring the off-hand onto the weapon. All sign-relative so a
     // lefty mirrors for free.
-    const gunBrace = (isPlayer && a.wpn==='spudgun' && a._gunAiming) ? 1 : 0;   // gun always held ready while aiming, even with no enemy in combat range
-    const ck = Math.max(combatK, gunBrace) * (twoH?1:(1-Math.min(run,0.8))) * (1-g);   // two-hander keeps the grip strong while running
+    const ck = combatK * (twoH?1:(1-Math.min(run,0.8))) * (1-g);   // two-hander keeps the grip strong while running
     if(ck>0.01 && !atk && !a.slam && (a.slamHit||0)<=0 && a.state!=='holding' && a.state!=='held' && !a.tackle){
       const WH=(u.whand==null?1:u.whand), isWH=(i===WH), wk=a.wpn;
       let sx=tx, sy=ty, sz=tz;
@@ -5828,8 +5839,6 @@ function solveArmsIK(a, dt, atk){
         if(isWH){ sx=A.sh.x*0.7; sy=1.24; sz=0.54; } else { sx=A.sh.x*1.0; sy=1.08; sz=0.22; }
       } else if(wk==='potlid'){                              // SHIELD (lid up front)
         if(isWH){ sx=A.sh.x*0.4; sy=1.40; sz=0.50; } else { sx=A.sh.x*1.05; sy=1.06; sz=0.18; }
-      } else if(wk==='spudgun'){                             // SPUD GUN -- braced two-handed, aimed forward (was falling into the fists guard: grip looked wrong)
-        if(isWH){ sx=A.sh.x*0.42; sy=1.34; sz=0.66; } else { sx=A.sh.x*0.06; sy=1.28; sz=0.56; }   // WH out front on the grip, OH bracing under the barrel
       } else {                                               // FISTS -> boxer guard
         sx=sign*0.15 + A.sh.x*0.2; sy=1.54; sz=0.42;
       }
