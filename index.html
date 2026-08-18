@@ -3439,13 +3439,11 @@ function resolveHit(A, isPlayer){
       // Every clean hit on an ENEMY makes them stumble -- knockback + a stagger
       // floor -- so the mob reels off each blow. Player-dealt only; a boss is exempt.
       if(isPlayer && !blocked){ T.stagger=Math.max(T.stagger, heavy?0.6:0.42); kb*=1.5; }
-      // GIANT ROLLING PIN: a LIGHT hit pancakes them (flatten stun); a HEAVY is a
-      // home-run LAUNCH -- every clean heavy sends them flying (the _thrown skid that
-      // bowls over whoever's behind), no HP gate. A killing blow ragdolls as usual.
-      if(w.flatten && isPlayer && !blocked){
-        if(heavy && T.hp>0){ T._thrown={t:0.6, ang}; T._thrownHit=null; T.stagger=Math.max(T.stagger,0.9);
-          ring(cpos,0xffffff,2.0); popWord({x:T.pos.x,y:1.9,z:T.pos.z},'LAUNCH!','#ffe6a0',24); }
-        else { T.stagger=Math.max(T.stagger,2.2); T._flatT=2.2; T.chef.scale.y=0.45; T.chef.scale.x=T.chef.scale.z=1.25; }
+      // GIANT ROLLING PIN: a LIGHT hit pancakes them (flatten stun). Its HEAVY is a
+      // home-run LAUNCH, but that's the universal heft-scaled launch below now (the
+      // rolling pin just sits at the heavy end of it), so this only handles the light.
+      if(w.flatten && isPlayer && !blocked && !heavy){
+        T.stagger=Math.max(T.stagger,2.2); T._flatT=2.2; T.chef.scale.y=0.45; T.chef.scale.x=T.chef.scale.z=1.25;
       }
       // FROST (meat club): chill the mob into a slow crawl
       if(w.frost && isPlayer && !blocked){ T._frostT=2.5; T.spd=Math.min(T.spd, T._baseSpd||T.spd)*0.5; }
@@ -3461,9 +3459,18 @@ function resolveHit(A, isPlayer){
     // is a reasonable body/head split; a tuning dial -- could read the attacker
     // swing shape's strike-Y for a per-swing height later)
     applyImpact(T, ang, (heavy?1.4:0.85)*(blocked?0.4:1)*Emul, 1.4, weight);
-    // HEAVY KNOCKDOWN: a decisive heavy blow floors them -- a hefty weapon on its
-    // own, or any heavy that follows up an already-reeling foe. Not on a kill/block.
-    if(isPlayer && heavy && !blocked && T.hp>0 && !w.flatten && (weight>0.6 || preStag>0.45)) knockDown(T, ang, 1.1);   // rolling pin heavy LAUNCHES instead of flooring (handled above)
+    // UNIVERSAL HEAVY LAUNCH: EVERY clean heavy sends them skidding back, and the
+    // distance scales with the weapon's heft -- a spatula just nudges them a step,
+    // while the frozen meat club and giant rolling pin bowl them clear across the
+    // deck (the _thrown skid plows through anyone behind; see updateEnemy). No HP
+    // gate; a killing blow still ragdolls. Bosses are too heavy to launch.
+    if(isPlayer && heavy && !blocked && !boss && T.hp>0){
+      const lv=7+heft*14;                                        // launch speed climbs with heft: spatula(.20)~9.8, cast iron(1.0)~21, meat club(.95)/rolling pin(.90) just under
+      T.vel.x=Math.sin(ang)*lv; T.vel.z=Math.cos(ang)*lv;        // SET (overrides the lighter knockback shove above) so distance tracks heft cleanly
+      T._thrown={t:0.28+heft*0.42, ang}; T._thrownHit=null;      // heavier weapon = longer slide too (spatula ~0.36s, rolling pin ~0.66s)
+      T.stagger=Math.max(T.stagger, 0.6+heft*0.4);
+      if(heft>0.55){ ring(cpos,0xffffff,1.5+heft*0.7); popWord({x:T.pos.x,y:1.9,z:T.pos.z},'LAUNCH!','#ffe6a0',24); }   // the big irons earn the call-out; light weapons just tap them back
+    }
     // weapon BITE: the attacker's blade jolts back on contact instead of sailing
     // through -- a short recoil kick on the weaponGroup (integrated in poseChef)
     if(!blocked){ A._biteV = (A._biteV||0) - (0.7 + weight*1.5); }
@@ -5116,7 +5123,7 @@ function actionName(a){
     // PER-WEAPON SILHOUETTES: the swing itself telegraphs the class. A thrust
     // weapon's light is the quick straight strike; a heavy-class iron throws the
     // big committed overhead on heavies. Everything else keeps the sword arc.
-    if(w.thrust) return a.attack.heavy ? mir(a,'atk_sword') : 'atk_light';   // knife: fast stab, heavy = full slash
+    if(w.thrust) return altSwing(a,'atk_sword');   // knife: it's the closest thing to a sword -- treat it as one (alternating slash, light and heavy alike)
     if(w.cls==='heavy' && a.attack.heavy) return 'atk_heavy';                // cast iron / meat club overhead
     return altSwing(a,'atk_sword');                                          // most weapons: swing alternates side each strike (mash = back-and-forth)
   }
