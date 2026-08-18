@@ -4223,6 +4223,17 @@ function updateEnemy(e, dt){
     if(e._thrown.t>0){
       e.vel.multiplyScalar(Math.exp(-1.3*dt));                    // carries across the deck (looser drag so it can bowl a couple bodies)
       e.pos.addScaledVector(e.vel,dt);
+      // BOUNCE: the launch skips the body off the deck like a skipped stone -- one or
+      // two shrinking hops (a dust puff at each touchdown) before it settles into the
+      // slide. A faster (heavier-weapon) launch hops higher, so it bounces more.
+      if(e._thrown.vy===undefined){ e._thrown.vy=clamp(2.6+Math.hypot(e.vel.x,e.vel.z)*0.2,2.8,7.0); e._thrown.bounces=0; e.vel.y=0; }
+      { const gy=restY(e.pos.x,e.pos.z,e.pos.y,e.r);
+        e._thrown.vy-=27*dt; e.pos.y+=e._thrown.vy*dt;            // gravity arcs the hop
+        if(e.pos.y<=gy){ e.pos.y=gy;
+          if(e._thrown.vy<-1.7 && e._thrown.bounces<2){           // still enough downward speed to skip again
+            e._thrown.vy*=-0.52; e._thrown.bounces++; e.vel.x*=0.74; e.vel.z*=0.74;   // restitution; each skip also sheds ground speed
+            const cp=e.pos.clone(); cp.y=gy+0.06; burst(cp,7,0xffd27a,0.85); ring(cp,COL.flame,0.75); if(AC&&sfx.thud) sfx.thud(0.3); }   // dust puff on touchdown
+          else e._thrown.vy=0; } }
       const wx=e.pos.x, wz=e.pos.z;                               // where the slide WANTED to land
       collide(e.pos,e.r);                                        // ...then clamped off any wall/prop
       const sp=Math.hypot(e.vel.x,e.vel.z);
@@ -4237,6 +4248,7 @@ function updateEnemy(e, dt){
         e.vel.x*=-0.35; e.vel.z*=-0.35;
         popWord(cp,'SPLAT!','#ff8a3a',26);
         if(e.hp<=0) killChef(e,a2); else knockDown(e,a2+Math.PI,1.1);
+        e.pos.y=restY(e.pos.x,e.pos.z,e.pos.y,e.r);               // splatted mid-hop -> drop back to the deck (don't leave them floating)
         e._thrown=null; e._thrownHit=null;
         syncEnemyMesh(e,dt,e.facing); return;
       }
@@ -4254,7 +4266,7 @@ function updateEnemy(e, dt){
           e.vel.multiplyScalar(0.78);                             // each body it plows shaves momentum
         } }
       syncEnemyMesh(e,dt,e.facing); return;
-    } else { e._thrown=null; e._thrownHit=null; }
+    } else { e._thrown=null; e._thrownHit=null; e.pos.y=restY(e.pos.x,e.pos.z,e.pos.y,e.r); }   // skid over -> make sure we settled on the deck, not mid-hop
   }
 
   // KNOCKDOWN: shoved to the deck -- lie prone briefly, then get up. Overrides AI
