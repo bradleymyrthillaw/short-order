@@ -285,9 +285,10 @@
   #ctrls .pad{color:var(--steel)}
   @media (max-width:560px){ #plate{top:14px;left:14px} #cooks{top:12px;right:14px} }
 
-  .hint{position:fixed;bottom:12px;left:50%;transform:translateX(-50%);z-index:10;
-    font-size:11px;letter-spacing:.18em;color:#7a6647;opacity:0;transition:opacity .5s}
+  .hint{position:fixed;bottom:12px;left:50%;transform:translateX(-50%);z-index:10;max-width:94vw;text-align:center;
+    font-size:11px;letter-spacing:.14em;color:#8a7654;opacity:0;transition:opacity .5s;pointer-events:none}
   .hint.on{opacity:1}
+  .hint b{color:#e6cf9e;font-weight:700}
   #pause{position:fixed;inset:0;z-index:30;display:grid;place-items:center;
     background:rgba(10,7,4,.62);backdrop-filter:blur(2px);opacity:0;pointer-events:none;visibility:hidden;transition:opacity .18s, visibility 0s .18s}
   #pause.on{opacity:1;pointer-events:auto;visibility:visible;transition:opacity .18s}   /* hidden pause exposed live DEV buttons (MAX DRUNK!) clickable through the overlay -- the real "mid-day everything breaks" bug */
@@ -7143,6 +7144,19 @@ function maybeSpawnWave(){
    player.pos/facing default to the front-of-pass spot facing the kitchen,
    for callers that don't care where the chef starts.
    onEnd(result): result = { survived:bool, kills, maxCombo, wpn } */
+// FIRST-NIGHT CONTROL HINT: teach the core controls IN PLAY (the title dropped its
+// wall of text), a dim bottom-centre legend that fades after a few seconds. Only
+// early -- veterans deep in a run don't need it. Contextual > a manual on the menu.
+function showNightHint(){
+  const h=document.getElementById('hint'); if(!h) return;
+  clearTimeout(showNightHint._t);
+  if(GAME.inRun && RUN.day>2){ h.classList.remove('on'); h.innerHTML=''; return; }   // veterans: skip
+  h.innerHTML = TOUCHCAP
+    ? 'move <b>LEFT STICK</b> &middot; <b>LIGHT</b>/<b>HEAVY</b> to fight &middot; <b>GRAB</b> a weapon off the pass &middot; hold <b>HEAVY</b> to SPIN'
+    : 'move <b>WASD</b> &middot; <b>J</b>/<b>K</b> to fight &middot; <b>F</b> grabs a weapon off the pass &middot; hold <b>K</b> to SPIN';
+  h.classList.add('on');
+  showNightHint._t=setTimeout(()=>h.classList.remove('on'), 9000);   // teach, then get out of the way
+}
 function startNight(cfg, onEnd){
   // clear
   GAME.toBar=false; GAME.barFight=false; AFTER.postBrawl=false; AFTER.fighting=false;   // fresh night: not in the bar-transition/scrap
@@ -7199,7 +7213,7 @@ function startNight(cfg, onEnd){
   document.getElementById('hud').classList.add('on');
   if(TOUCHCAP){ touchEl.classList.add('on'); if(bPause) bPause.classList.add('on'); }
   document.getElementById('veil').classList.add('hide');
-  document.getElementById('hint').classList.add('on');
+  showNightHint();   // teach the core controls in-play (fades after a few seconds; early nights only)
   if(HULL_PROPS) hullify(arena);   // FULL terrace cel outline for the brawl (idempotent; ground plane skipped)
 }
 let ended=false;
