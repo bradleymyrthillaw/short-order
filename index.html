@@ -2582,6 +2582,45 @@ function ring(pos,col,scale){ const r=RINGS.find(r=>r.life<=0); if(!r)return;
 function ringTick(dt){ for(const r of RINGS){ if(r.life<=0)continue; r.life-=dt;
   const k=1-r.life/r.max; r.m.scale.setScalar(r.s0*(0.4+k*1.4)); r.m.material.opacity=(1-k)*0.7;
   if(r.life<=0)r.m.visible=false; } }
+/* impact STARBURST: a sharp, spiky comic star that SNAPS out at the contact point --
+   kiki (all points and angles), not the round ground ring (bouba). Billboarded to
+   face the camera, pops near-full instantly with a tiny overshoot, spins a hair and
+   fades fast. Additive on saturated warm hues so it flashes without going white. */
+const STARS=[];
+(function(){
+  function starGeo(points, inner){                        // filled jagged star: alt outer(1)/inner(inner) spikes, triangle-fanned from centre
+    const N=points*2, pts=[]; for(let i=0;i<N;i++){ const ang=(i/N)*TAU-Math.PI/2, rr=(i%2===0)?1:inner; pts.push(Math.cos(ang)*rr,Math.sin(ang)*rr); }
+    const v=[]; for(let i=0;i<N;i++){ const a=i*2, b=((i+1)%N)*2; v.push(0,0,0, pts[a],pts[a+1],0, pts[b],pts[b+1],0); }
+    const g=new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(v,3)); return g;
+  }
+  const gBig=starGeo(9,0.40), gSm=starGeo(5,0.46);        // main 9-point burst + a tighter 5-point sparkle offset inside it
+  for(let i=0;i<14;i++){
+    const grp=new THREE.Group();
+    const big=new THREE.Mesh(gBig,new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,side:THREE.DoubleSide,depthWrite:false,depthTest:false,blending:THREE.AdditiveBlending}));
+    const sm =new THREE.Mesh(gSm ,new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,side:THREE.DoubleSide,depthWrite:false,depthTest:false,blending:THREE.AdditiveBlending}));
+    sm.scale.setScalar(0.5); sm.rotation.z=Math.PI/9; big.renderOrder=sm.renderOrder=20;
+    grp.add(big); grp.add(sm); grp.visible=false; scene.add(grp);
+    STARS.push({grp,big,sm,life:0,max:1,s0:1,roll:0,spin:0});
+  }
+})();
+function starburst(pos,col,scale,power){
+  const st=STARS.find(s=>s.life<=0); if(!st) return;
+  st.grp.visible=true; st.grp.position.copy(pos);
+  st.big.material.color.setHex(col); st.sm.material.color.setHex(0xffd257);   // saturated gold core inside the coloured burst (stays gold under additive, doesn't wash white)
+  st.life=st.max=0.16+Math.min(0.1,(power||0)*0.1); st.s0=scale*0.14; st.roll=rand(0,TAU); st.spin=rand(-5,5);
+}
+function starTick(dt){
+  for(const st of STARS){ if(st.life<=0) continue; st.life-=dt;
+    const k=1-st.life/st.max;                              // 0..1 over its short life
+    const pop=st.s0*(0.85 + 0.7*Math.min(1,k*4) - 0.15*Math.max(0,k-0.4));   // near-full on frame 1, tiny overshoot, then eases -> a SNAP, not a swell
+    st.grp.scale.setScalar(Math.max(0.001,pop));
+    const op=(1-k)*(1-k);                                  // quick front, fast tail
+    st.big.material.opacity=op*0.7; st.sm.material.opacity=op*0.68;   // subtle accent, not a bright wash
+    st.roll+=st.spin*dt;
+    st.grp.quaternion.copy(camera.quaternion); st.grp.rotateZ(st.roll);   // billboard, then roll in-plane
+    if(st.life<=0) st.grp.visible=false;
+  }
+}
 /* FOOTFALL DUST: a low tan puff kicked back off a running footfall -- ground
    contact you can feel, tied to the gait. Reuses the spark pool (low, short,
    dusty) plus a small ground ring. Kept subtle and only at pace. */
@@ -3477,8 +3516,9 @@ function resolveHit(A, isPlayer){
     const bw = blocked?0.4:1;
     const col = blocked?0xffffff : (w.metal?0xffe6a0:0xff9a4a);
     burst(cpos, Math.round(((blocked?6:11) + weight*30)*bw + 2), col, (0.9 + weight*2.4)*bw);
-    ring(cpos, w.metal?COL.cream:COL.flame, (1.0 + weight*1.7)*bw);
-    if((weight>0.55 || finisher) && !blocked){ ring(cpos, 0xffffff, 1.5+weight); burst(cpos, 8, 0xffffff, 1.6+weight); }
+    // kiki not bouba: a spiky STAR snaps at the contact point instead of a round ground ring
+    starburst(cpos, blocked?0x7fb2d6:(w.metal?0xffc24a:0xff7a1e), (0.7 + weight*1.0)*bw, weight);
+    if((weight>0.55 || finisher) && !blocked){ starburst(cpos, 0xffd23d, 1.0+weight*0.6, 1); burst(cpos, 8, 0xffd23d, 1.6+weight); }
     shake((0.22 + weight*1.5) * (0.65 + (w.shake||0.3)*0.6) * (finisher?1.25:1) * bw);   // chunkier -- and reads the weapon's AUTHORED shake so a cast-iron BONK out-kicks a spatula tink
     camKick(ang, (0.22 + weight*0.55) * (finisher?1.3:1) * bw);   // lens lurches along the blow
     hitstop(Math.min(0.22, 0.05 + weight*0.17) * (finisher?1.2:1) * (blocked?0.5:1), A, T);   // hitlag on the PAIR only (crowd keeps moving); capped ~13f -- uncapped heavies froze 20-25f and stacked dead time onto the combo-cancel. the finisher down-beat runs a touch past the cap.
@@ -4244,7 +4284,7 @@ function updateEnemy(e, dt){
       // is why body-bowling almost never ran.)
       if(sp>7 && (Math.abs(e.pos.x-wx)>0.03 || Math.abs(e.pos.z-wz)>0.03)){
         e.hp-=14; const cp=e.pos.clone(); cp.y=1.2;
-        burst(cp,16,0xffb060,1.5); ring(cp,COL.flame,1.4); shake(0.55); hitstop(clamp(sp/16,0.4,1)*0.12, e); impactFrames(3,0xff8a3a,0x140c07); if(AC) sfx.thud(0.85); camKick(a2+Math.PI,0.45);
+        burst(cp,16,0xffb060,1.5); starburst(cp,0xff8a3a,1.5,1); shake(0.55); hitstop(clamp(sp/16,0.4,1)*0.12, e); impactFrames(3,0xff8a3a,0x140c07); if(AC) sfx.thud(0.85); camKick(a2+Math.PI,0.45);
         e.vel.x*=-0.35; e.vel.z*=-0.35;
         popWord(cp,'SPLAT!','#ff8a3a',26);
         if(e.hp<=0) killChef(e,a2); else knockDown(e,a2+Math.PI,1.1);
@@ -9866,7 +9906,7 @@ function tick(){
     if(player){ poseChef(player,true,dt); }
   }
 
-  sparkTick(dt); ringTick(dt); kitchenTick(dt); grabCD=Math.max(0,grabCD-dt);
+  sparkTick(dt); ringTick(dt); starTick(dt); kitchenTick(dt); grabCD=Math.max(0,grabCD-dt);
   // pickup bobbing (planted tikis stand still -- only the base glow pulses)
   for(const p of PICKUPS){ if(p.taken)continue;
     if(!p.planted){ p.g.position.y=p.y0+Math.sin(GAME.t*2+p.x)*0.08; p.g.rotation.y+=dt*1.2; }
