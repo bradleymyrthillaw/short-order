@@ -3051,6 +3051,7 @@ function pollPad(){
   const rs=radial(a[2]||0, a[3]||0, 0.22); out.rstick.x=rs[0]; out.rstick.y=rs[1];
   const pressed=i=>b[i]&&b[i].pressed;
   out.light=GP.edges.tap('b0', pressed(0));       // cross
+  out.lightHeld=pressed(0);                        // held state -> spud gun rapid fire
   out.heavy=GP.edges.tap('b2', pressed(2));       // square
   out.heavyHeld=pressed(2);                        // held state -> hold-to-spin (kitchen tornado)
   out.pickup=GP.edges.tap('b3', pressed(3));      // triangle
@@ -3866,62 +3867,74 @@ function updatePlayer(dt, pad, actor){
     else { P.grabCD=Math.max(P.grabCD,0.14); sfx.whiff(); }     // empty grab: a whiff with a hair of recovery so the press always reads
   }
 
-  // ===== SPUD GUN — twin-stick shooter: aim with the right stick (or pad rstick / mouse-hold),
-  // auto-fire while engaged, and STRAFE with the left stick (facing tracks the aim, not the move). =====
+  // ===== SPUD GUN — LIGHT button shoots (tap = one spud, HOLD = rapid fire); HEAVY
+  // button = a big shot that costs 3 rounds. Aim with the crosshair (pointer-lock),
+  // the right/aim stick, or soft auto-aim at the nearest enemy when you just fire. =====
   P._gunAiming=false;
   if(P.wpn==='spudgun' && !COOKING && !P.hold && P.stagger<=0 && !P.dead){
-    let ax=0, az=0, aiming=false, firing=false;
+    // FIRE BUTTONS (every input method): light = shoot, heavy = big shot
+    const fireHeld = pad.lightHeld || TOUCH.lightHeld || (!REMOTE && (KEY['j'] || MOUSE.lHeld));
+    const fireEdge = pad.light || consume('lightEdge') || (!REMOTE && (tapK('j') || MOUSE.l));
+    const bigEdge  = pad.heavy || consume('heavyEdge') || (!REMOTE && (tapK('k') || MOUSE.r));
+    const wantFire = fireHeld || fireEdge || bigEdge;
+    // AIM: crosshair (pointer-lock) > right/aim stick; else soft auto-aim at nearest on fire
+    let ax=0, az=0, aiming=false;
     if(!REMOTE){
       if(MOUSE.locked){                                                                                 // DESKTOP TPS: aim at whatever is under the crosshair (screen centre)
         _ray.setFromCamera({x:0,y:0}, camera);
-        // 1) enemy under the reticle -> lock the shot to its TRUE world position. Exact, and
-        //    immune to the 1-frame-stale camera matrix (the camera only PICKS the target; we
-        //    then aim at the enemy itself). A horizontal-plane intersect is unusable here --
-        //    the lens sits near bullet height, so the near-parallel ray hits wildly unstable.
-        let best=null, bestD=0.03;                                                                      // NDC radius^2 (~0.17) = crosshair on the body
+        let best=null, bestD=0.03;                                                                      // enemy under the reticle -> lock the shot to its TRUE world position
         for(const e of enemies){ if(!e||e.dead) continue;
           _projV.set(e.pos.x,(e.pos.y||0)+0.9,e.pos.z).project(camera);
-          if(_projV.z>1) continue;                                                                      // behind the lens
+          if(_projV.z>1) continue;
           const d=_projV.x*_projV.x+_projV.y*_projV.y;
           if(d<bestD){ bestD=d; best=e; } }
         if(best){ P._aimAng=Math.atan2(best.pos.x-P.pos.x, best.pos.z-P.pos.z); P._aimLock=best; P._aimFall=null; }
-        else { _aimPt.copy(camera.position).addScaledVector(_ray.ray.direction, 16);                    // 2) empty space: aim far down the crosshair's forward ray (stable)
+        else { _aimPt.copy(camera.position).addScaledVector(_ray.ray.direction, 16);                    // empty space: aim far down the crosshair's forward ray
           P._aimAng=Math.atan2(_aimPt.x-P.pos.x, _aimPt.z-P.pos.z); P._aimLock=null;
-          P._aimFall={ y:_aimPt.y, d:Math.max(1,Math.hypot(_aimPt.x-P.pos.x,_aimPt.z-P.pos.z)) }; }     // remember the crosshair point's HEIGHT for shot pitch
-        aiming=true; firing=MOUSE.lHeld;
+          P._aimFall={ y:_aimPt.y, d:Math.max(1,Math.hypot(_aimPt.x-P.pos.x,_aimPt.z-P.pos.z)) }; }
+        aiming=true; P._aimTgt=best||null;
       }
-      else if(TOUCH.aiming){ ax=TOUCH.aimX; az=TOUCH.aimY; aiming=true; firing=true; P._aimLock=null; P._aimFall=null;
+      else if(TOUCH.aiming){ ax=TOUCH.aimX; az=TOUCH.aimY; aiming=true; P._aimLock=null; P._aimFall=null;
         const t=(P.lockOn&&!P.lockOn.dead)?P.lockOn:nearestEnemy(P.pos,P.facing,null); P._aimTgt=t||null; }   // stick aims the angle; nearest enemy supplies shot PITCH
-      else if(pad.rstick && Math.hypot(pad.rstick.x,pad.rstick.y)>0.28){ ax=pad.rstick.x; az=pad.rstick.y; aiming=true; firing=true; P._aimLock=null; P._aimFall=null;
+      else if(pad.rstick && Math.hypot(pad.rstick.x,pad.rstick.y)>0.28){ ax=pad.rstick.x; az=pad.rstick.y; aiming=true; P._aimLock=null; P._aimFall=null;
         const t=(P.lockOn&&!P.lockOn.dead)?P.lockOn:nearestEnemy(P.pos,P.facing,null); P._aimTgt=t||null; }
-      else if(pad.light||KEY['j']||MOUSE.l){                                                            // one-thumb/key fire + soft aim-assist
-        const t=(P.lockOn&&!P.lockOn.dead)?P.lockOn:nearestEnemy(P.pos,P.facing,null);
-        if(t) P._aimAng=Math.atan2(t.pos.x-P.pos.x, t.pos.z-P.pos.z); aiming=true; firing=true;
-        P._aimTgt=t||null; P._aimLock=null; P._aimFall=null;
-      }
     }
     if(ax||az){ const aw=new V3(); aw.addScaledVector(camRight,ax); aw.addScaledVector(camFwd,-az); if(aw.lengthSq()>0.04) P._aimAng=Math.atan2(aw.x,aw.z); }
+    // soft auto-aim: pressed fire with no stick/crosshair -> lock onto lock-on / nearest enemy
+    if(!aiming && wantFire && !MOUSE.locked){
+      const t=(P.lockOn&&!P.lockOn.dead)?P.lockOn:nearestEnemy(P.pos,P.facing,null);
+      if(t){ P._aimAng=Math.atan2(t.pos.x-P.pos.x, t.pos.z-P.pos.z); P._aimTgt=t; P._aimLock=null; P._aimFall=null; }
+      aiming=true;
+    }
     if(aiming){ P._gunAiming=true; if(P._aimAng!=null) P.facing=angLerp(P.facing, P._aimAng, Math.min(1,dt*16)); }   // interpolate, never snap
-    if(firing){ P._fireCD=(P._fireCD||0)-dt; if(P._fireCD<=0){
-      // shot PITCH: converge on the target's chest height (or the crosshair point) so firing from
-      // the pass at floor enemies actually angles DOWN instead of sailing over their heads
-      const my=P.pos.y+1.15; let vy=0;
-      const tg=(MOUSE.locked? P._aimLock : P._aimTgt);
+    // shot PITCH: converge on the target's chest height (or the crosshair point) so shots from the
+    // pass at floor enemies angle DOWN instead of sailing over their heads
+    const my=P.pos.y+1.15;
+    const pitch=()=>{ let vy=0; const tg=(MOUSE.locked? P._aimLock : P._aimTgt);
       if(tg && !tg.dead){ const d=Math.hypot(tg.pos.x-P.pos.x, tg.pos.z-P.pos.z); if(d>0.3) vy=(((tg.pos.y||0)+0.95)-my)*24/d; }
       else if(P._aimFall){ vy=(P._aimFall.y-my)*24/P._aimFall.d; }
-      vy=clamp(vy,-14,14);
-      fireDot(P.pos.x,my,P.pos.z, P._aimAng!=null?P._aimAng:P.facing, 24, WEAPONS.spudgun.light, vy); P._gunKick=1; P._fireCD=0.1; if(AC)sfx.thud(0.2); shake(0.045);
+      return clamp(vy,-14,14); };
+    const ang=P._aimAng!=null?P._aimAng:P.facing;
+    // FIRE
+    P._fireCD=(P._fireCD||0)-dt;
+    if(bigEdge && P.dur>0){                                    // BIG SHOT: fat fast slug, 3x dmg + splash. Costs 3 rounds.
+      fireDot(P.pos.x,my,P.pos.z, ang, 30, WEAPONS.spudgun.heavy*3, pitch(), false, true);
+      P._gunKick=1.7; P._fireCD=0.26; if(AC){ sfx.thud(0.55); if(sfx.heavy)sfx.heavy(0.6); } shake(0.16); camKick(ang,0.3);
+      if(P.dur!==Infinity){ P.dur-=Math.min(3,P.dur); if(P.dur<=0) breakWeapon(P); else updateHUDWeapon(); }
+    }
+    else if((fireEdge||fireHeld) && P._fireCD<=0 && P.dur>0){  // normal shot (tap once, or auto-repeat while held)
+      fireDot(P.pos.x,my,P.pos.z, ang, 24, WEAPONS.spudgun.light, pitch()); P._gunKick=1; P._fireCD=0.1; if(AC)sfx.thud(0.2); shake(0.045);
       if(P.dur!==Infinity){ P.dur--; if(P.dur<=0) breakWeapon(P); else updateHUDWeapon(); }   // burn a spud; out of spuds -> the gun breaks
-    } }
-    else P._fireCD=0;
+    }
+    if(!wantFire && P._fireCD<0) P._fireCD=0;                  // idle: keep the next tap instant, don't run the CD deep negative
   }
   // ----- attacks (Cross light / Square heavy / touch) -----
   let wantLight=!COOKING && P.wpn!=='spudgun' && (pad.light||(!REMOTE&&(tapK('j')||MOUSE.l||consume('lightEdge')))); if(!REMOTE) MOUSE.l=false;
-  let wantHeavy=!COOKING && (pad.heavy||(!REMOTE&&(tapK('k')||MOUSE.r||consume('heavyEdge')))); if(!REMOTE) MOUSE.r=false;
+  let wantHeavy=!COOKING && P.wpn!=='spudgun' && (pad.heavy||(!REMOTE&&(tapK('k')||MOUSE.r||consume('heavyEdge')))); if(!REMOTE) MOUSE.r=false;   // gun's heavy is the big shot (handled above), not a swing
   // KITCHEN TORNADO (spin): HOLD the heavy button. A quick TAP is still a normal
   // heavy swing; keep heavy held and the chef whirls out into the spin (once per
   // hold), paid for with stamina (>=50%) on its own cooldown. Pad/touch/key/mouse.
-  const heavyHeld = !COOKING && (pad.heavyHeld || TOUCH.heavyHeld || (!REMOTE && (KEY['k'] || MOUSE.rHeld)));
+  const heavyHeld = !COOKING && P.wpn!=='spudgun' && (pad.heavyHeld || TOUCH.heavyHeld || (!REMOTE && (KEY['k'] || MOUSE.rHeld)));   // gun uses heavy for the big shot, no tornado
   if(heavyHeld){ P._spinHoldT=(P._spinHoldT||0)+dt;
     if(P._spinHoldT>=0.22 && !P._spinFired && kitchenTornado(P)){ P._spinFired=true; wantHeavy=false; } }
   else { P._spinHoldT=0; P._spinFired=false; }
@@ -6787,10 +6800,10 @@ function greaseAt(x,z){ for(const h of HAZARDS){ if(h.t<0.3) continue; const dx=
    Separate from the ballistic THROWN pool so they read as rapid-fire bullets. ---- */
 const SPUDS=[]; const _spudGeo=new THREE.SphereGeometry(0.06,6,5);
 const _spudMat=new THREE.MeshStandardMaterial({color:0xffe28a, emissive:0xffb02a, emissiveIntensity:2.4, roughness:0.4});
-function fireDot(x,y,z,ang,spd,dmg,vy,hostile){
+function fireDot(x,y,z,ang,spd,dmg,vy,hostile,big){
   const m=new THREE.Mesh(_spudGeo, hostile?new THREE.MeshStandardMaterial({color:0xe8f4ff,emissive:0x38bdf8,emissiveIntensity:2.2,roughness:0.4}):_spudMat);
-  m.position.set(x,y,z); scene.add(m);
-  SPUDS.push({ x,y,z, vx:Math.sin(ang)*spd, vz:Math.cos(ang)*spd, vy:vy||0, t:0, g:m, dmg:dmg||4, ang, hostile:!!hostile });
+  m.position.set(x,y,z); if(big) m.scale.setScalar(2.3); scene.add(m);
+  SPUDS.push({ x,y,z, vx:Math.sin(ang)*spd, vz:Math.cos(ang)*spd, vy:vy||0, t:0, g:m, dmg:dmg||4, ang, hostile:!!hostile, big:!!big });
 }
 function tickSpuds(dt){
   for(let i=SPUDS.length-1;i>=0;i--){ const s=SPUDS[i]; s.t+=dt;
@@ -6806,10 +6819,13 @@ function tickSpuds(dt){
           burst(s.g.position,4,0x38bdf8,0.5); scene.remove(s.g); SPUDS.splice(i,1); continue; } }
     }
     else if(GAME.mode==='play'){ for(const e of enemies){ if(e.dead)continue;
-      const dx=e.pos.x-s.x, dz=e.pos.z-s.z, r=(e.r||0.34)+0.3;
+      const dx=e.pos.x-s.x, dz=e.pos.z-s.z, r=(e.r||0.34)+(s.big?0.55:0.3);
       if(dx*dx+dz*dz<r*r && s.y>(e.pos.y||0)+0.08 && s.y<(e.pos.y||0)+1.75){ hit=e; break; } } }         // 3D: must be at BODY height -- no more kills from way above the head
-    if(hit){ hit.hp-=s.dmg; hit.stagger=Math.max(hit.stagger||0,0.12); hit.vel.x+=Math.sin(s.ang)*2.2; hit.vel.z+=Math.cos(s.ang)*2.2;
-      if(AC)sfx.thud(0.32); burst(s.g.position,4,0xffd23d,0.4); if(hit.hp<=0)killChef(hit);
+    if(hit){ hit.hp-=s.dmg; hit.stagger=Math.max(hit.stagger||0,s.big?0.6:0.12); const kbk=s.big?8:2.2; hit.vel.x+=Math.sin(s.ang)*kbk; hit.vel.z+=Math.cos(s.ang)*kbk;
+      if(AC)sfx.thud(s.big?0.6:0.32); burst(s.g.position,s.big?10:4,0xffd23d,s.big?0.9:0.4);
+      if(s.big){ starburst(s.g.position,0xffd23d,1.5,1); ring(s.g.position,COL.flame,1.2); shake(0.14);   // fat slug: a splash that staggers everyone nearby
+        for(const o of enemies){ if(o===hit||o.dead)continue; const ox=o.pos.x-s.x, oz=o.pos.z-s.z; if(ox*ox+oz*oz<2.4){ o.hp-=8; o.stagger=Math.max(o.stagger||0,0.35); o.vel.x+=Math.sin(s.ang)*3; o.vel.z+=Math.cos(s.ang)*3; if(o.hp<=0)killChef(o,s.ang); } } }
+      if(hit.hp<=0)killChef(hit);
       scene.remove(s.g); SPUDS.splice(i,1); continue; }
     if(s.t>1.5 || Math.abs(s.x)>HALFW+3 || Math.abs(s.z)>HALFD+3){ scene.remove(s.g); SPUDS.splice(i,1); }   // expire
   }
