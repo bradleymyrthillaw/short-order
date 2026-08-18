@@ -7914,7 +7914,7 @@ function breakSomeStations(severity){
 function rentDueOn(day){ return day>1 && (day-1)%WEEK_DAYS===0; }          // rent hits at the start of each new week
 function daysToRent(day){ return WEEK_DAYS - ((day-1)%WEEK_DAYS); }
 // split a mob of N into escalating waves: 3,4,5,... capped so no wave is huge
-function chunkSizes(n){ const out=[]; let w=3, left=n; while(left>0){ const s=Math.min(w,left); out.push(s); left-=s; w=Math.min(7,w+1); } return out; }
+function chunkSizes(n){ const out=[]; let w=2, left=n; while(left>0){ const s=Math.min(w,left); out.push(s); left-=s; w=Math.min(5,w+1); } return out; }   // per-wave counts start at 2, cap at 5 (was 3->7) -- fewer enemies per wave
 // build the night from how the day went: the mob is who you wronged (roster),
 // its size floored at 3, its toughness scaled by your rating (higher rating =
 // you're a bigger target = nastier night).
@@ -9443,7 +9443,7 @@ function buildBarDoors(){
   const beam=new THREE.PointLight(0xffb060,2.6,11,2); beam.position.set(0,1.7,1.6); g.add(beam);
   return g;
 }
-function barEligible(){ return !!GAME.inRun && !GAME.vinceNight; }
+function barEligible(){ return !GAME.vinceNight; }   // bottle service after EVERY non-boss night, quick-play too (was run-only, so the main START button skipped it)
 function beginToBar(){
   if(GAME.toBar) return; GAME.toBar=true;
   for(const p of PICKUPS){ if(p.g) scene.remove(p.g); } PICKUPS.length=0;
@@ -9830,13 +9830,13 @@ function showDayEnd(res){
 const SLICE={
   player:{ wpn:'fists', pos:{x:0,z:-8}, facing:0 },
   larder: Array.from({length:PASS_SLOTS},(_,i)=>({ x:passSlotX(i), z:PASS.z, y:PASS_TOP_Y })),   // 7 pass slots; the weapon in each is rolled per round (startNight)
-  waveSizes: [3,4,5,6,7],
+  waveSizes: [2,3,3,4,4],
   waves:[
-    'weak','weak','weak',                                   // wave 1
-    'weak','weak','weak','tough',                            // wave 2
-    'weak','weak','tough','weak','tough',                    // wave 3
-    'weak','tough','weak','tough','weak','tough',             // wave 4
-    'tough','weak','tough','weak','tough','weak','tough'      // wave 5
+    'weak','weak',                                          // wave 1
+    'weak','weak','tough',                                  // wave 2
+    'weak','tough','tough',                                 // wave 3
+    'weak','tough','weak','tough',                          // wave 4
+    'tough','weak','tough','tough'                          // wave 5
   ]
 };
 
