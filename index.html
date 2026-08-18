@@ -1858,7 +1858,7 @@ const WEAPONS = {
   torch:    { key:'torch',    name:'Tiki Torch',   cls:'medium', reach:2.0,  light:10, heavy:19, wind:0.16, rec:0.22, stagger:0.75, gbreak:false, knock:true,  dur:34, shake:0.55, heft:0.55, metal:false, tint:0xff7a1e },
   plate:    { key:'plate',    name:'Frisbee Plate',cls:'light',  reach:1.4,  light:6,  heavy:10, wind:0.12, rec:0.18, stagger:0.50, gbreak:false, knock:true,  dur:Infinity, shake:0.30, heft:0.35, metal:true, frisbee:true, tint:0xefe9dc },
   spudgun:  { key:'spudgun',  name:'Spud Gun',     cls:'light',  reach:1.2,  light:4,  heavy:7,  wind:0.05, rec:0.07, stagger:0.2, gbreak:false, knock:false, dur:60, shake:0.06, heft:0.30, metal:false, ranged:true, tint:0x8a6d3b },   // 60 spuds, then it breaks
-  rollingpin:{key:'rollingpin',name:'Giant Rolling Pin', cls:'heavy', reach:1.9, light:14, heavy:28, wind:0.30, rec:0.40, stagger:1.4, gbreak:false, knock:true, dur:40, shake:0.9, heft:0.9, metal:false, flatten:true, tint:0xd9a15a },
+  rollingpin:{key:'rollingpin',name:'Giant Rolling Pin', cls:'heavy', reach:2.35, light:14, heavy:28, wind:0.20, rec:0.30, stagger:1.4, gbreak:false, knock:true, dur:40, shake:0.9, heft:0.9, metal:false, flatten:true, tint:0xd9a15a },   // faster swing (wind .30->.20, rec .40->.30) + longer reach (1.9->2.35)
   floorbuffer:{key:'floorbuffer',name:'Floor Buffer', cls:'medium', reach:1.4, light:3, heavy:6, wind:0.10, rec:0.12, stagger:0.7, gbreak:false, knock:true, dur:50, shake:0.6, heft:0.7, metal:false, spin:true, tint:0x7a7a86 },
   meatclub:{key:'meatclub',name:'Frozen Meat Club', cls:'heavy', reach:1.6, light:12, heavy:26, wind:0.36, rec:0.42, stagger:1.1, gbreak:false, knock:true, dur:Infinity, shake:0.95, heft:0.95, metal:false, frost:true, tint:0x8a5a3a }
 };
@@ -2594,7 +2594,7 @@ const STARS=[];
     const g=new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(v,3)); return g;
   }
   const gBig=starGeo(9,0.40), gSm=starGeo(5,0.46);        // main 9-point burst + a tighter 5-point sparkle offset inside it
-  for(let i=0;i<14;i++){
+  for(let i=0;i<22;i++){   // bigger pool: stars now linger ~1s so more are alive at once
     const grp=new THREE.Group();
     const big=new THREE.Mesh(gBig,new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,side:THREE.DoubleSide,depthWrite:false,depthTest:false,blending:THREE.AdditiveBlending}));
     const sm =new THREE.Mesh(gSm ,new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,side:THREE.DoubleSide,depthWrite:false,depthTest:false,blending:THREE.AdditiveBlending}));
@@ -2607,14 +2607,14 @@ function starburst(pos,col,scale,power){
   const st=STARS.find(s=>s.life<=0); if(!st) return;
   st.grp.visible=true; st.grp.position.copy(pos);
   st.big.material.color.setHex(col); st.sm.material.color.setHex(0xffd257);   // saturated gold core inside the coloured burst (stays gold under additive, doesn't wash white)
-  st.life=st.max=0.16+Math.min(0.1,(power||0)*0.1); st.s0=scale*0.14; st.roll=rand(0,TAU); st.spin=rand(-5,5);
+  st.life=st.max=0.95+Math.min(0.3,(power||0)*0.3); st.s0=scale*0.14; st.roll=rand(0,TAU); st.spin=rand(-1.4,1.4);   // stick around ~1s then fade (gentle drift over the longer life)
 }
 function starTick(dt){
   for(const st of STARS){ if(st.life<=0) continue; st.life-=dt;
-    const k=1-st.life/st.max;                              // 0..1 over its short life
-    const pop=st.s0*(0.85 + 0.7*Math.min(1,k*4) - 0.15*Math.max(0,k-0.4));   // near-full on frame 1, tiny overshoot, then eases -> a SNAP, not a swell
+    const k=1-st.life/st.max;                              // 0..1 over its life
+    const pop=st.s0*(0.82 + 0.6*Math.min(1,k*22));         // SNAP to full in the first ~2 frames, then hold that size
     st.grp.scale.setScalar(Math.max(0.001,pop));
-    const op=(1-k)*(1-k);                                  // quick front, fast tail
+    const op=(k<0.62?1:Math.max(0,1-(k-0.62)/0.38));       // hold full, then fade out over the last third
     st.big.material.opacity=op*0.7; st.sm.material.opacity=op*0.68;   // subtle accent, not a bright wash
     st.roll+=st.spin*dt;
     st.grp.quaternion.copy(camera.quaternion); st.grp.rotateZ(st.roll);   // billboard, then roll in-plane
@@ -3395,7 +3395,7 @@ function resolveHit(A, isPlayer){
     if(A.wpn!=='fists' && A.dur!==Infinity){ A.dur--; if(A.dur<=0) breakWeapon(A); }
     return;
   }
-  const reach=w.reach + (isPlayer?0.25:0.1) + (A.reachBonus||0);   // a boss (Vince) reaches further
+  const reach=w.reach + (isPlayer?0.45:0.1) + (A.reachBonus||0);   // player reach cheated a touch (0.25->0.45) so hits connect more forgivingly; a boss (Vince) reaches further
   // FINISHER BEAT: every 3rd LANDED hit in a string is the down-beat (GAME.combo
   // counts prior landed hits, so %3===2 fires on the hit that becomes the 3rd).
   // More damage, a bigger shove, a harder camera hit -- a mash gets a 1-2-BANG
@@ -3409,7 +3409,7 @@ function resolveHit(A, isPlayer){
   // ---- swing physics: attacker motion feeds both the swept hit test and the
   // swing energy (Mordhau/M&B momentum -- a running-in strike hits harder) ----
   const avx=A.vel?A.vel.x:0, avz=A.vel?A.vel.z:0;     // attacker velocity
-  const arc = w.thrust?0.5:0.95;
+  const arc = (w.thrust?0.5:0.95) + (isPlayer?0.12:0);   // player gets a slightly wider angular window -- more forgiving glancing hits
   const swArc = w.thrust?0.35:0.8;                    // blade's angular sweep across the active window
   const back = 0.05;                                  // seconds of attacker travel the sweep reaches back over (anti-tunnel)
   const swingSpeed = clamp(0.14/((w.wind)||0.14), 0.7, 1.5);   // faster wind-up = faster blade (BASE wind: A.attack.wind carries ATK_SWING_MUL, which floored this to 0.7 for every weapon)
@@ -3694,6 +3694,9 @@ function updatePlayer(dt, pad, actor){
     document.getElementById('combo').classList.remove('on'); } }
   P.weaveCD=Math.max(0,P.weaveCD-dt); P.dodgeCD=Math.max(0,P.dodgeCD-dt); P.chainT=Math.max(0,P.chainT-dt); P.tackleCD=Math.max(0,P.tackleCD-dt); P.jumpCD=Math.max(0,P.jumpCD-dt); P.slamHit=Math.max(0,P.slamHit-dt); P.grabCD=Math.max(0,P.grabCD-dt);
   P._heat=Math.max(0,(P._heat||0)-dt); P._tornadoCD=Math.max(0,(P._tornadoCD||0)-dt);   // HEAT window + tornado cooldown
+  P._tornado=Math.max(0,(P._tornado||0)-dt);   // spin timer must decay -- it never did, so the whirl formula sat at 0 (no visible spin). Now it winds down and the body actually whirls.
+  if(P._tornado>0){ P._spinSpkT=(P._spinSpkT||0)-dt;   // orbiting sparks trace the whirl so the spin really reads
+    if(P._spinSpkT<=0){ P._spinSpkT=0.035; const a=(0.9-P._tornado)*15, sp=P.pos.clone(); sp.x+=Math.sin(a)*1.05; sp.z+=Math.cos(a)*1.05; sp.y=1.05; burst(sp,2,0xffd27a,0.8); if(a%1.4<0.1) ring(P.pos.clone(),COL.flame,2.4); } }
   P._rageCD=Math.max(0,(P._rageCD||0)-dt);                                               // RAGE re-trigger lockout
   // RAGE is a once-per-night super now: it charges on the CLOCK (ready ~60s into the
   // fight), holds at full until you spend it, and once used it's gone for the night.
@@ -5357,7 +5360,7 @@ function poseChef(a, isPlayer, dt){
   if(a.pos && !(Number.isFinite(a.pos.x)&&Number.isFinite(a.pos.y)&&Number.isFinite(a.pos.z))){ a.pos.set(0,0,0); if(a.vel) a.vel.set(0,0,0); }
   if(!Number.isFinite(a.facing)) a.facing=0;
   c.position.copy(a.pos); c.rotation.y=a.facing;
-  if((a._tornado||0)>0) c.rotation.y = a.facing + (0.5-a._tornado)*40;   // KITCHEN TORNADO: whirl the whole body
+  if((a._tornado||0)>0) c.rotation.y = a.facing + (0.9-a._tornado)*15;   // KITCHEN TORNADO: whirl the whole body ~2 turns over 0.9s as the timer winds down (slower/readable, was a broken 0-offset)
   if(!u || !u.mixRoot) return;                          // placeholder (skeleton not ready)
   if(a.dead){ if(a.rag){ ragTick(a, dt); ragApplySkel(a); } else if(a._mixer) a._mixer.update(dt);   // physics ragdoll (or death clip if the rig couldn't build one)
     updateLocs(a, dt); return; }   // dreads keep falling/swaying over the ragdoll
@@ -6588,13 +6591,13 @@ function throwWeapon(P){
    needs at least half a stamina bar and SPENDS half of it, so it competes with
    sprinting instead of being a spam button. Only when a crowd is in range; hits
    harder while HEAT is up. */
-const TORNADO_STAM=50;   // stamina required (>=) and spent (bar is 0..100)
+const TORNADO_STAM=40;   // stamina required (>=) and spent (bar is 0..100) -- eased 50->40 so the spin is available more often
 function kitchenTornado(P){
-  if(P.attack||P.hold||P.dodge||P.tackle||P.grabbed||P.steal||P.stagger>0||P.dead||GAME.mode!=='play') return false;
+  if(P.hold||P.dodge||P.tackle||P.grabbed||P.steal||P.stagger>0||P.dead||GAME.mode!=='play') return false;   // no P.attack guard: a held heavy CANCELS its own swing into the spin (P.attack=null below), so it fires reliably instead of being blocked by the swing the tap started
   if((P._tornadoCD||0)>0 || (P.stamina||0) < TORNADO_STAM) return false;   // needs >=50% stamina
   let near=false; for(const e of enemies){ if(!e.dead && Math.hypot(e.pos.x-P.pos.x,e.pos.z-P.pos.z)<3.6){ near=true; break; } }
   if(!near) return false;                                     // don't burn stamina on empty air
-  P._tornadoCD=4.5; P._tornado=0.5; P.iframe=Math.max(P.iframe,0.55); P.attack=null;
+  P._tornadoCD=3.5; P._tornado=0.9; P.iframe=Math.max(P.iframe,0.9); P.attack=null;   // longer spin (0.5->0.9s) so the whirl reads; i-frames cover the whole thing
   P.stamina=Math.max(0, (P.stamina||0)-TORNADO_STAM);         // spend half the bar
   const R=3.4, hot=(P._heat||0)>0;
   for(const e of enemies){ if(e.dead||e.boss) continue;
@@ -10070,7 +10073,8 @@ function updateWeaponTrail(){
   const u=P.chef.userData, wg=u.weaponGroup, atk=P.attack;
   const swinging = !!(atk && wg && u.weaponKey!=='fists'
     && atk.t>=atk.wind*0.7 && atk.t < atk.wind+atk.active+atk.rec*0.55);
-  if(swinging){
+  const spinning = (P._tornado||0)>0 && wg && u.weaponKey!=='fists';   // KITCHEN TORNADO: the weapon whirls with the body -> ribbon follows it, so you SEE the spin
+  if(swinging || spinning){
     P.chef.updateMatrixWorld(true);                       // current blade transform this frame
     const tz=TIPZ[u.weaponKey]||0.9;
     _tl.set(0,0.02,tz);       wg.localToWorld(_tl);
