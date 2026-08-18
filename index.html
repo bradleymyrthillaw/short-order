@@ -9865,7 +9865,7 @@ function setQuality(q){
   QUALITY=q;
   try{
     const dpr = QUALITY>=2 ? 1 : Math.min(window.devicePixelRatio||1, QUALITY===1?1.5:2);
-    if(Math.abs(renderer.getPixelRatio()-dpr)>0.01){ renderer.setPixelRatio(dpr); renderer.setSize(window.innerWidth||W, window.innerHeight||H); }
+    if(Math.abs(renderer.getPixelRatio()-dpr)>0.01){ renderer.setPixelRatio(dpr); layout(); }   // re-run layout so the canvas keeps the ROTATED stage size (was resizing to portrait innerW/innerH -> broke the forced-landscape layout on mobile)
     if(BLOOM) BLOOM.enabled = QUALITY<=1;
     if(QUALITY>=2 && COMPOSER) COMPOSER=null;          // bypass bloom chain -> RT+POST path
     if(QUALITY>=2) key.shadow.mapSize.set(1024,1024);
