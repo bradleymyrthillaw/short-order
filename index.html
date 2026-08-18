@@ -9663,6 +9663,7 @@ function updateAfter(dt){
   if(AFTER.t>0 && AFTER.spawnT<=0){ if(Math.random()<nightDemand()) spawnPartyGroup(); AFTER.spawnT=rand(3.0,5.5)/Math.max(0.4,nightDemand()); }
   AFTER.heat=Math.min(1, AFTER.heat + heatRate()*dt);
   { const beac=barRoom&&barRoom.userData.ctrBeacon; if(beac&&barRoom.visible){ beac.position.y=2.7+Math.sin(GAME.t*4)*0.15; beac.rotation.y+=dt*2.6; } }   // bob/spin the pickup beacon
+  updateCarryMesh();   // keep the carried bottle glued to her hands each frame (day loop does this too; without it the bottle spawns once at the pickup spot and never follows)
   for(let i=AFTER.groups.length-1;i>=0;i--){ const g=AFTER.groups[i];
     if(g.state==='waiting'){ g.patience-=dt*0.035;   // slower (0.055->0.035): ~28s to walk, not 18 -- the room is big and the runs are long
       if(g.mark){ g.mark.position.y=2.5+Math.sin(GAME.t*4+i)*0.12; g.mark.rotation.z+=dt*2.5; }
