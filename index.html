@@ -7250,21 +7250,15 @@ function chooseCard(c){
   if(AC) sfx.ding(0.8);
   toast(c.name+' \u2014 LOCKED IN');
 }
-const BUILD_VERSION='MOVEMENT BUILD r66';   // shown on the start screen AND the pause menu -- bump every deploy
+const BUILD_VERSION='r67';   // shown on the start screen AND the pause menu -- bump every deploy
 function showTitle(){
   GAME.mode='title';
   { const pv=document.getElementById('pver'); if(pv) pv.textContent=BUILD_VERSION; }
   document.getElementById('card').innerHTML =
-    '<div style="background:#39ff6a;color:#04120a;font-family:\'Anton\',sans-serif;letter-spacing:.16em;padding:7px 12px;border-radius:7px;margin-bottom:12px;box-shadow:0 0 26px #39ff6a99;font-size:15px">✅ MIXAMO SKELETON BUILD</div>'+
-    '<div class="kick">AFTER HOURS · THE PATRONS CAME BACK, AND THEY WANT A REFUND</div>'+
     '<div class="title">SHORT<br><span class="b" style="color:#39ff6a;text-shadow:0 3px 0 #0009,0 0 26px #39ff6acc,0 0 50px #39ff6a66">ORDER</span></div>'+
-    '<div class="sub">The dinner rush is over. They\u2019re not. Grab whatever\u2019s on the pass \u2014 '+
-    'a spatula, a nonstick, the cast iron if HR isn\u2019t around \u2014 and clear the line. '+
-    'Everything breaks. Everything is heavy in its own way. Tips are not guaranteed.</div>'+
-    '<button class="btn" id="dayBtn">'+(RUN.day>1?('☀️ CONTINUE — DAY '+RUN.day+' ($'+RUN.bank+')'):'☀️ OPEN THE DINER (DAY SHIFT)')+'</button>'+
-    '<button class="btn" id="playBtn" style="margin-top:10px;background:#2a0a3e;color:var(--cream);box-shadow:0 6px 0 #12042a,0 0 26px #2de2e666,0 10px 22px #0007">🌙 STEP TO THE PASS (NIGHT ONLY)</button>'+
-    '<div style="margin-top:18px;color:#39ff6a;letter-spacing:.14em;font-size:14px">'+BUILD_VERSION+' · MIXAMO RIG</div>'+
-    '<div id="ctrls">'+ctrlRows()+'</div>';
+    '<button class="btn" id="dayBtn">☀️ DAY · COOK</button>'+
+    '<button class="btn" id="playBtn" style="margin-top:10px;background:#2a0a3e;color:var(--cream);box-shadow:0 6px 0 #12042a,0 0 26px #2de2e666,0 10px 22px #0007">🌙 NIGHT · FIGHT</button>'+
+    '<div style="margin-top:18px;color:#39ff6a99;letter-spacing:.14em;font-size:13px">'+BUILD_VERSION+'</div>';
   document.getElementById('dayBtn').onclick=()=>{ goFullscreen(); audioInit(); if(AC&&AC.state==='suspended')AC.resume(); ended=false; toDay(); };
   document.getElementById('playBtn').onclick=()=>{ goFullscreen(); audioInit(); if(AC&&AC.state==='suspended')AC.resume(); ended=false; GAME.inRun=false; startNight(SLICE, onNightEnd); };
   document.getElementById('veil').classList.remove('hide');
