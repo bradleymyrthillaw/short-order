@@ -7856,7 +7856,7 @@ function resetRun(){ RUN.day=1; RUN.bank=SEED_CASH; RUN.debt=1500; RUN.rating=6;
 /* LONG-TERM BRAWL RECORDS: a CAREER store kept separate from RUN (which resetRun
    wipes), so all-time bests + a recent-brawl log survive across runs, days and
    sessions. localStorage['so_records']. Recorded once per night at endNight. */
-const RECORDS={ brawls:0, wins:0, losses:0, totalKills:0, bestKills:0, bestCombo:0, bestWave:0, streak:0, bestStreak:0, log:[] };
+const RECORDS={ brawls:0, wins:0, losses:0, totalKills:0, bestKills:0, bestCombo:0, bestWave:0, streak:0, bestStreak:0, bestNightTake:0, bestBottleStreak:0, bottlesAllTime:0, log:[] };
 function loadRecords(){ try{ const s=localStorage.getItem('so_records'); if(s) Object.assign(RECORDS, JSON.parse(s)); }catch(e){} if(!Array.isArray(RECORDS.log)) RECORDS.log=[]; }
 function saveRecords(){ try{ localStorage.setItem('so_records', JSON.stringify(RECORDS)); }catch(e){} }
 function recordBrawl(res){
@@ -7875,10 +7875,21 @@ function recordBrawl(res){
   saveRecords();
   return { beat, nr, isRecord:Object.keys(nr).length>0 };
 }
+// bottle service career: banked once per night wherever the night's takings are banked.
+function recordBottleNight(){
+  let nr=false;
+  RECORDS.bottlesAllTime=(RECORDS.bottlesAllTime||0)+(AFTER.bottles||0);
+  if((AFTER.cash||0)>(RECORDS.bestNightTake||0)){ RECORDS.bestNightTake=AFTER.cash; nr=true; }
+  if((AFTER.best||0)>(RECORDS.bestBottleStreak||0)){ RECORDS.bestBottleStreak=AFTER.best; nr=true; }
+  saveRecords();
+  return nr;
+}
 function recordsBlock(){   // compact career readout for the end screens
+  const bar=(RECORDS.bottlesAllTime||RECORDS.bestNightTake)?
+    '<br>BAR &nbsp; best night <b>$'+(RECORDS.bestNightTake||0)+'</b> &middot; best pour streak <b>'+(RECORDS.bestBottleStreak||0)+'</b> &middot; '+(RECORDS.bottlesAllTime||0)+' bottles run all-time':'';
   return '<div class="stat" style="opacity:.72;font-size:12px;letter-spacing:.05em;margin-top:6px">'+
     'CAREER &nbsp; best kills <b>'+RECORDS.bestKills+'</b> &middot; best combo <b>'+RECORDS.bestCombo+'</b> &middot; furthest wave <b>'+RECORDS.bestWave+'</b><br>'+
-    RECORDS.wins+'W &middot; '+RECORDS.losses+'L &middot; streak <b>'+RECORDS.streak+'</b> (best '+RECORDS.bestStreak+') &middot; '+RECORDS.totalKills+' put down all-time</div>';
+    RECORDS.wins+'W &middot; '+RECORDS.losses+'L &middot; streak <b>'+RECORDS.streak+'</b> (best '+RECORDS.bestStreak+') &middot; '+RECORDS.totalKills+' put down all-time'+bar+'</div>';
 }
 loadRun(); loadRecords();
 // re-resolve stations + tables from the saved layout (falls back to the defaults).
@@ -9520,6 +9531,7 @@ function startBarService(){
     mk.rotation.x=Math.PI; mk.position.set(BARCTR.x,2.8,BARCTR.z); barRoom.add(mk); barRoom.userData.ctrBeacon=mk;
   }
   AFTER.t=60; AFTER.cash=0; AFTER.bottles=0; AFTER.heat=0; AFTER.riot=false; AFTER.spawnT=1.0;
+  AFTER.streak=0; AFTER.comboT=0; AFTER.best=0; AFTER._lastCall=false;
   for(const grp of AFTER.groups){ if(grp.g) scene.remove(grp.g); if(grp.mark) scene.remove(grp.mark); } AFTER.groups.length=0;
   if(player){ player.wpn='fists'; player.dur=Infinity; equip(player.chef,'fists'); player.attack=null; player.hold=null; player.dead=false; }
   document.body.classList.add('cookmode');
@@ -9573,6 +9585,7 @@ function endBarBrawl(won){
   const c=barRoom&&barRoom.userData.crowd; if(c) c.flee=false;              // crowd flows back off the walls
   GAME.mode='after'; AFTER.on=true; AFTER.postBrawl=true;
   AFTER.heat=0.25; AFTER.riot=false; AFTER.t=Math.max(AFTER.t,18); AFTER.spawnT=1.0;   // fresh breathing room to keep serving
+  AFTER.streak=0; AFTER.comboT=0; AFTER._lastCall=false;   // the scrap broke the chain; start the encore clean
   if(player){ player.hp=Math.max(player.hp, player.hpMax*0.6); player.dead=false; player.attack=null; player.hold=null;
     player.wpn='fists'; player.dur=Infinity; equip(player.chef,'fists'); }
   document.body.classList.add('cookmode');                                  // touch UI back to service
@@ -9582,6 +9595,7 @@ function endBarBrawl(won){
 }
 function barLoseNight(){
   GAME.barFight=false; AFTER.fighting=false; AFTER.on=false;
+  recordBottleNight();
   const cash=AFTER.cash; RUN.bank+=cash; saveRun();                         // keep what you banked before it kicked off
   for(const e of enemies) scene.remove(e.chef); enemies.length=0;
   barFade(true, 560, ()=>{
@@ -9597,7 +9611,10 @@ function barLoseNight(){
 /* ============ AFTER HOURS (chez P3): bottle service on the last two nights of the week.
    Beli runs the room -- demand, what the crowd pays per bottle, and how fast trouble builds.
    Ignored tables and chuggers add HEAT; full heat = a riot rolls straight into the brawl. */
-const AFTER={ on:false, t:0, cash:0, bottles:0, heat:0, groups:[], spawnT:2, riot:false, fighting:false, postBrawl:false };
+const AFTER={ on:false, t:0, cash:0, bottles:0, heat:0, groups:[], spawnT:2, riot:false, fighting:false, postBrawl:false, streak:0, comboT:0, best:0, _lastCall:false };
+const SERVE_WINDOW=4.5;                                           // seconds a serve streak stays alive between pours
+const BEACON_COOL=new THREE.Color(0x2fd06a), BEACON_WARM=new THREE.Color(0xffc21e), BEACON_HOT=new THREE.Color(0xff2a1e), BEACON_ROWDY=new THREE.Color(0xcc3aff), _beaconC=new THREE.Color();   // rowdy sits OFF the green->amber->red urgency ramp (violet-magenta) so it never reads as "about to walk"
+function serveMult(){ return AFTER.comboT>0 ? Math.min(3, 1+(AFTER.streak-1)*0.25) : 1; }   // tip chain: x1 -> x3 (nine pours in a row, each within SERVE_WINDOW)
 function afterDow(){ return (RUN.day-1)%WEEK_DAYS; }
 function afterTonight(){ return afterDow()>=WEEK_DAYS-2; }        // the week's last two days
 function nightDemand(){ return Math.max(0.35, Math.min(1.4, 0.40+0.12*(beli()-2))); }
@@ -9605,19 +9622,8 @@ function nightBottlePrice(){ const b=beli(); let m;
   if(b>=6) m=1+0.025*(b-6); else if(b>=4) m=0.55+0.225*(b-4); else m=0.15+0.075*Math.max(0,b-1);
   return Math.max(60, Math.round(360*m*(1+0.2*upLvl('tipjar'))/10)*10); }
 function heatRate(){ return 0.03 + Math.max(0,(5.5-beli())/4.5)*0.055; }   // BASELINE 0.03 so heat always climbs -> a bar fight reliably kicks off (~33s) instead of the night fizzling to morning at beli>=5.5 where the old rate was 0
-function chuggerChance(){ return Math.min(0.6, 0.05+Math.max(0,4-beli())*0.08); }
-function startAfterHours(){
-  dayCleanup(); GAME.mode='after'; AFTER.on=true; AFTER.t=60; AFTER.cash=0; AFTER.bottles=0; AFTER.heat=0; AFTER.riot=false; AFTER.spawnT=1.5;
-  for(const g of AFTER.groups){ if(g.g) scene.remove(g.g); } AFTER.groups.length=0;
-  if(!player){ player=makePlayer(); attachPlayerHelpers(player); }
-  player.pos.set(0,0,2); player.vel.set(0,0,0); player.wpn='fists'; equip(player.chef,'fists');
-  if(typeof dayScene==='function') dayScene(false);               // night look, neon back on
-  document.body.classList.add('cookmode');                        // keep the day HUD/prompt layer
-  document.getElementById('dayhud')&&document.getElementById('dayhud').classList.add('on');
-  document.getElementById('hud').classList.remove('on');
-  document.getElementById('veil').classList.add('hide');
-  GAME.paused=false; toast('AFTER HOURS — bottles at the pass. $'+nightBottlePrice()+' a pop tonight.');
-}
+function rowdyChance(){ return clamp(0.12+Math.max(0,4-beli())*0.06, 0.12, 0.40); }   // odds a party spawns ROWDY (magenta beacon): a whale that pays 1.5x AND vents heat if you reach it -- but spikes heat and storms off as a grudge if it walks
+// (legacy terrace-based startAfterHours removed -- bottle service now lives only in the bar room via startBarService)
 function spawnPartyGroup(){
   const free=[]; for(let i=0;i<BAR_BOOTHS.length;i++){ if(!AFTER.groups.some(g=>g.slot===i)) free.push(i); }
   if(!free.length) return;
@@ -9626,7 +9632,7 @@ function spawnPartyGroup(){
   const OUT=[0x9c2f66,0x274a86,0xb0641e,0x2f6a3a,0x5a2f8c,0x1f7d80,0xa8324a,0x2f6a9c];   // deeper, richer shirts
   const chef=(RIG.ready?makeChefGLB('customer',{shirt:OUT[(Math.random()*OUT.length)|0]}):makeChef({customer:true,jacket:OUT[0]}));
   chef.position.set(b.x-dx*1.35, 0, b.z-dz*1.35); chef.rotation.y=b.rot;   // seated on the banquette, facing out
-  const g={ slot, x:b.x, z:b.z, g:chef, state:'waiting', patience:1, linger:0 };   // serve target = the table (3.4u reach clears the booth obst)
+  const g={ slot, x:b.x, z:b.z, g:chef, state:'waiting', patience:1, linger:0, rowdy:Math.random()<rowdyChance() };   // serve target = the table (3.4u reach clears the booth obst)
   const mk=new THREE.Mesh(new THREE.ConeGeometry(0.17,0.36,4), new THREE.MeshStandardMaterial({color:0xffd23d,emissive:0xffd23d,emissiveIntensity:1.9}));
   mk.rotation.x=Math.PI; mk.position.set(b.x,2.6,b.z); scene.add(mk); g.mark=mk;   // a beacon so waiting booths read through the crowd
   AFTER.groups.push(g); return g;
@@ -9647,12 +9653,19 @@ function afterVerbs(P,pad,dt){
     let best=null,bd=4.2;                                          // serve reach widened 3.4->4.2
     for(const g of AFTER.groups){ if(g.state!=='waiting') continue;
       const d=Math.hypot(g.x-P.pos.x,g.z-P.pos.z); if(d<bd){ bd=d; best=g; } }
-    if(best){ const pay=nightBottlePrice(); AFTER.cash+=pay; AFTER.bottles++;
+    if(best){
+      if(AFTER.comboT>0) AFTER.streak++; else AFTER.streak=1;     // extend or open the tip chain
+      AFTER.comboT=SERVE_WINDOW; AFTER.best=Math.max(AFTER.best,AFTER.streak);
+      const mult=Math.min(3,1+(AFTER.streak-1)*0.25), lastCall=AFTER.t<=15&&AFTER.t>0;
+      let pay=nightBottlePrice()*mult*(best.rowdy?1.5:1)*(lastCall?2:1);
+      pay=Math.max(10,Math.round(pay/10)*10);
+      AFTER.cash+=pay; AFTER.bottles++;
       best.state='party'; best.linger=6; DAY.carry=null; updateCarryMesh();
       if(best.mark){ scene.remove(best.mark); best.mark=null; }
-      popWord(new V3(best.x,1.9,best.z),'$'+pay,'#d24ba0',30); if(AC){ sfx.pickup(); drum('ride',0.7); }
-      if(Math.random()<chuggerChance()){ AFTER.heat=Math.min(1,AFTER.heat+0.28); toast('someone CHUGGED it. trouble brewing.'); shake(0.4);
-        GAME.nightRoster=GAME.nightRoster||[]; GAME.nightRoster.push((Math.random()*8)|0); }
+      const mstr=''+Math.round(mult*100)/100;
+      popWord(new V3(best.x,1.95,best.z),'$'+pay+(mult>1?' ×'+mstr:'')+(best.rowdy?' DEFUSED':''), best.rowdy?'#33e0c0':(mult>1?'#ffd23d':'#d24ba0'), best.rowdy?34:30);
+      if(best.rowdy){ AFTER.heat=Math.max(0,AFTER.heat-0.22); }   // defusing a rowdy crew VENTS the room -- the player's lever on heat
+      if(AC){ sfx.pickup(); drum(best.rowdy?'crash':'ride', best.rowdy?0.8:0.7); }
       return; }
   }
 }
@@ -9660,14 +9673,31 @@ function updateAfter(dt){
   if(GAME.mode!=='after') return;
   AFTER.t-=dt;
   AFTER.spawnT-=dt;
-  if(AFTER.t>0 && AFTER.spawnT<=0){ if(Math.random()<nightDemand()) spawnPartyGroup(); AFTER.spawnT=rand(3.0,5.5)/Math.max(0.4,nightDemand()); }
+  if(AFTER.comboT>0){ AFTER.comboT-=dt; if(AFTER.comboT<=0) AFTER.streak=0; }   // let the tip chain lapse if she stops pouring
+  const lastCall = AFTER.t<=15 && AFTER.t>0;                                    // final 15s: the room goes off
+  if(lastCall && !AFTER._lastCall){ AFTER._lastCall=true; toast('LAST CALL — DOUBLE TIPS'); shake(0.35); if(AC){ drum('crash',0.85); } }
+  if(AFTER.t>0 && AFTER.spawnT<=0){                                             // last call floods the floor; otherwise demand-gated
+    if(lastCall || Math.random()<nightDemand()) spawnPartyGroup();
+    AFTER.spawnT=(lastCall?rand(0.7,1.5):rand(3.0,5.5))/Math.max(0.4,nightDemand()); }
+  if(AFTER.t>6 && AFTER.spawnT>0.5 && !AFTER.groups.some(g=>g.state==='waiting')) AFTER.spawnT=0.4;   // anti-dead-air: pull the next party in when nobody's waiting
   AFTER.heat=Math.min(1, AFTER.heat + heatRate()*dt);
   { const beac=barRoom&&barRoom.userData.ctrBeacon; if(beac&&barRoom.visible){ beac.position.y=2.7+Math.sin(GAME.t*4)*0.15; beac.rotation.y+=dt*2.6; } }   // bob/spin the pickup beacon
   updateCarryMesh();   // keep the carried bottle glued to her hands each frame (day loop does this too; without it the bottle spawns once at the pickup spot and never follows)
   for(let i=AFTER.groups.length-1;i>=0;i--){ const g=AFTER.groups[i];
-    if(g.state==='waiting'){ g.patience-=dt*0.035;   // slower (0.055->0.035): ~28s to walk, not 18 -- the room is big and the runs are long
-      if(g.mark){ g.mark.position.y=2.5+Math.sin(GAME.t*4+i)*0.12; g.mark.rotation.z+=dt*2.5; }
-      if(g.patience<=0){ AFTER.heat=Math.min(1,AFTER.heat+0.14); toast('a table walked. heat rising.');
+    if(g.state==='waiting'){ g.patience-=dt*0.035;   // ~28s to walk -- the room is big and the runs are long
+      if(g.mark){ const p=clamp(g.patience,0,1);      // beacon reads urgency at a glance: green -> amber -> red (rowdy = magenta throb, last call = all gold)
+        if(g.rowdy) _beaconC.copy(BEACON_ROWDY);
+        else if(lastCall) _beaconC.copy(BEACON_WARM);
+        else _beaconC.copy(p>0.5?BEACON_WARM:BEACON_HOT).lerp(p>0.5?BEACON_COOL:BEACON_WARM, p>0.5?(p-0.5)*2:p*2);
+        const mm=g.mark.material; mm.color.copy(_beaconC); mm.emissive.copy(_beaconC);
+        mm.emissiveIntensity=0.9+(1-p)*0.5+(g.rowdy?0.3:0);   // kept low on purpose: higher and bloom blows the green/red out to white and the triage read dies (house-style gotcha)
+        const urg=4+(1-p)*7+(g.rowdy?4:0);
+        g.mark.position.y=2.5+Math.sin(GAME.t*urg+i)*0.12; g.mark.rotation.z+=dt*(2.5+(g.rowdy?4:0));
+        g.mark.scale.setScalar(g.rowdy?1.5+Math.sin(GAME.t*9)*0.22:1); }
+      if(g.patience<=0){ AFTER.heat=Math.min(1,AFTER.heat+(g.rowdy?0.30:0.14));
+        if(g.rowdy){ GAME.nightRoster=GAME.nightRoster||[]; GAME.nightRoster.push((Math.random()*8)|0); toast('a rowdy crew stormed out — they’ll be back tomorrow'); }
+        else toast('a table walked. heat rising.');
+        AFTER.streak=0; AFTER.comboT=0;               // a walkout snaps the tip chain -> keeping the beacons out of the red pays
         if(g.mark) scene.remove(g.mark); scene.remove(g.g); AFTER.groups.splice(i,1); } }
     else if(g.state==='party'){ g.linger-=dt; if(g.linger<=0){ if(g.mark) scene.remove(g.mark); scene.remove(g.g); AFTER.groups.splice(i,1); } } }
   if(AFTER.heat>=1 && !AFTER.riot){ AFTER.riot=true;
@@ -9675,12 +9705,14 @@ function updateAfter(dt){
     AFTER.t=Math.min(AFTER.t,1.5); toast('IT’S KICKING OFF.'); shake(0.8); }
   // day HUD chips double as the after-hours readout
   const dr=document.getElementById('drun');
-  if(dr) dr.innerHTML='<b>AFTER HOURS</b> &nbsp; '+Math.max(0,AFTER.t).toFixed(0)+'s &nbsp; BANKED <b>$'+AFTER.cash+'</b>'+
-    '<br>HEAT <b style="color:'+(AFTER.heat>0.66?'#ff3b30':AFTER.heat>0.33?'#e3b53a':'#49d05a')+'">'+Math.round(AFTER.heat*100)+'%</b>'+(AFTER.riot?' — <b style="color:#ff3b30">RIOT</b>':'');
+  if(dr){ const mult=serveMult(), mstr=''+Math.round(mult*100)/100;
+    dr.innerHTML='<b>AFTER HOURS</b>'+(lastCall?' <b style="color:#ffd23d">· LAST CALL 2×</b>':'')+' &nbsp; '+Math.max(0,AFTER.t).toFixed(0)+'s &nbsp; BANKED <b>$'+AFTER.cash+'</b>'+
+      (AFTER.comboT>0&&AFTER.streak>1?' &nbsp; <b style="color:#ffd23d">×'+mstr+' · '+AFTER.streak+' streak</b>':'')+
+      '<br>HEAT <b style="color:'+(AFTER.heat>0.66?'#ff3b30':AFTER.heat>0.33?'#e3b53a':'#49d05a')+'">'+Math.round(AFTER.heat*100)+'%</b>'+(AFTER.riot?' — <b style="color:#ff3b30">RIOT</b>':''); }
   if(AFTER.t<=0) endAfterHours();
 }
 function endAfterHours(){
-  AFTER.on=false; RUN.bank+=AFTER.cash; saveRun();
+  AFTER.on=false; recordBottleNight(); RUN.bank+=AFTER.cash; saveRun();
   for(const g of AFTER.groups){ if(g.g) scene.remove(g.g); if(g.mark) scene.remove(g.mark); } AFTER.groups.length=0;
   document.body.classList.remove('cookmode');
   if(AFTER.postBrawl){ AFTER.postBrawl=false; exitBarToMorning(); return; }   // post-brawl bar service -> morning recap
