@@ -7220,6 +7220,7 @@ let ended=false;
 function endNight(survived){
   if(ended)return; ended=true; GAME.mode='over';
   const res={ survived, kills:GAME.kills, maxCombo:GAME.maxCombo, wpn:player.wpn };
+  res._rec=recordBrawl(res);   // persist this brawl to the long-term career records (all-time bests + log)
   document.getElementById('hint').classList.remove('on');
   if(GAME.onEnd && GAME.onEnd(res)) return;   // a run consumed the result and drew its own morning card
   showEnd(res);
@@ -7276,7 +7277,8 @@ function showTitle(){
     '<div class="title">SHORT<br><span class="b" style="color:#39ff6a;text-shadow:0 3px 0 #0009,0 0 26px #39ff6acc,0 0 50px #39ff6a66">ORDER</span></div>'+
     '<button class="btn" id="dayBtn">☀️ DAY · COOK</button>'+
     '<button class="btn" id="playBtn" style="margin-top:10px;background:#2a0a3e;color:var(--cream);box-shadow:0 6px 0 #12042a,0 0 26px #2de2e666,0 10px 22px #0007">🌙 NIGHT · FIGHT</button>'+
-    '<div style="margin-top:18px;color:#39ff6a99;letter-spacing:.14em;font-size:13px">'+BUILD_VERSION+'</div>';
+    '<div style="margin-top:18px;color:#39ff6a99;letter-spacing:.14em;font-size:13px">'+BUILD_VERSION+'</div>'+
+    (RECORDS.brawls>0 ? '<div style="margin-top:7px;color:#8a7654;letter-spacing:.12em;font-size:11px">BEST &nbsp; '+RECORDS.bestKills+' KILLS &middot; '+RECORDS.bestCombo+' COMBO &middot; WAVE '+RECORDS.bestWave+' &nbsp;&middot;&nbsp; '+RECORDS.wins+'W/'+RECORDS.losses+'L</div>' : '');
   document.getElementById('dayBtn').onclick=()=>{ goFullscreen(); audioInit(); if(AC&&AC.state==='suspended')AC.resume(); ended=false; toDay(); };
   document.getElementById('playBtn').onclick=()=>{ goFullscreen(); audioInit(); if(AC&&AC.state==='suspended')AC.resume(); ended=false; GAME.inRun=false; startNight(SLICE, onNightEnd); };
   document.getElementById('veil').classList.remove('hide');
@@ -7307,11 +7309,14 @@ function showEnd(res){
   touchEl.classList.remove('on'); if(bPause) bPause.classList.remove('on');
   GAME.paused=false; { const pe=document.getElementById('pause'); if(pe) pe.classList.remove('on'); }
   const win=res.survived;
+  const nrLine=(res._rec&&res._rec.isRecord)?'<div class="kick" style="color:#ffd23d;text-shadow:0 0 16px #ffd23daa">★ NEW RECORD ★</div>':'';
   c.innerHTML='<div class="card end '+(win?'win':'lose')+'">'+
+    nrLine+
     '<div class="kick">'+(win?pick(['THE LINE IS CLEAN','FIVE STARS ON YELP','THE HEALTH INSPECTOR IS IMPRESSED','MICHELIN CALLED']):pick(['YOU WENT DOWN','ONE STAR: "FOOD WAS FINE, STAFF ATTACKED US"','THE CUSTOMER WAS RIGHT THIS TIME','SENT HOME EARLY']))+'</div>'+
     '<div class="title">'+(win?'KITCHEN<br>CLEARED':'86\u2019D')+'</div>'+
     '<div class="stat">Cooks put down <b>'+res.kills+'</b> &nbsp;·&nbsp; Best combo <b>'+res.maxCombo+'</b>'+
     (win?'':'<br>Last weapon in hand: <b>'+WEAPONS[res.wpn].name+'</b>')+'</div>'+
+    recordsBlock()+
     '<button class="btn" id="againBtn">'+(win?'ANOTHER NIGHT':'BACK ON THE LINE')+'</button></div>';
   document.getElementById('againBtn').onclick=()=>{ goFullscreen(); ended=false; GAME.inRun=false; startNight(SLICE, onNightEnd); };
 }
@@ -7848,7 +7853,34 @@ function purgeRippedRun(){
 function loadRun(){ try{ const s=localStorage.getItem('so_run'); if(s){ Object.assign(RUN, JSON.parse(s)); } else { RUN.bank=SEED_CASH; } }catch(e){} if(!RUN.upgrades) RUN.upgrades={}; if(RUN.holiday==null) RUN.holiday=0; if(!RUN.layout) RUN.layout=null; if(!RUN.tables) RUN.tables=null; if(!RUN.owned) RUN.owned=[]; purgeRippedRun(); GAME.debt=RUN.debt; }
 function saveRun(){ try{ localStorage.setItem('so_run', JSON.stringify(RUN)); }catch(e){} }
 function resetRun(){ RUN.day=1; RUN.bank=SEED_CASH; RUN.debt=1500; RUN.rating=6; RUN.ratingHist=[]; RUN.upgrades={}; RUN.holiday=0; RUN.layout=null; RUN.tables=null; RUN.owned=[]; GAME.debt=1500; saveRun(); }
-loadRun();
+/* LONG-TERM BRAWL RECORDS: a CAREER store kept separate from RUN (which resetRun
+   wipes), so all-time bests + a recent-brawl log survive across runs, days and
+   sessions. localStorage['so_records']. Recorded once per night at endNight. */
+const RECORDS={ brawls:0, wins:0, losses:0, totalKills:0, bestKills:0, bestCombo:0, bestWave:0, streak:0, bestStreak:0, log:[] };
+function loadRecords(){ try{ const s=localStorage.getItem('so_records'); if(s) Object.assign(RECORDS, JSON.parse(s)); }catch(e){} if(!Array.isArray(RECORDS.log)) RECORDS.log=[]; }
+function saveRecords(){ try{ localStorage.setItem('so_records', JSON.stringify(RECORDS)); }catch(e){} }
+function recordBrawl(res){
+  const waves=(typeof WAVE!=='undefined'&&WAVE.chunks&&WAVE.chunks.length)?WAVE.chunks.length:1;
+  const wave=Math.min(((typeof WAVE!=='undefined'&&WAVE.wave)||0)+1, waves);
+  const beat={ kills:res.kills||0, combo:res.maxCombo||0, wave, survived:!!res.survived, wpn:res.wpn||'fists', t:Date.now() };
+  const nr={};
+  RECORDS.brawls++;
+  if(beat.survived){ RECORDS.wins++; RECORDS.streak++; } else { RECORDS.losses++; RECORDS.streak=0; }
+  RECORDS.totalKills+=beat.kills;
+  if(beat.kills>RECORDS.bestKills){ RECORDS.bestKills=beat.kills; nr.kills=true; }
+  if(beat.combo>RECORDS.bestCombo){ RECORDS.bestCombo=beat.combo; nr.combo=true; }
+  if(beat.wave>RECORDS.bestWave){ RECORDS.bestWave=beat.wave; nr.wave=true; }
+  if(RECORDS.streak>RECORDS.bestStreak){ RECORDS.bestStreak=RECORDS.streak; nr.streak=true; }
+  RECORDS.log.unshift(beat); if(RECORDS.log.length>12) RECORDS.log.length=12;
+  saveRecords();
+  return { beat, nr, isRecord:Object.keys(nr).length>0 };
+}
+function recordsBlock(){   // compact career readout for the end screens
+  return '<div class="stat" style="opacity:.72;font-size:12px;letter-spacing:.05em;margin-top:6px">'+
+    'CAREER &nbsp; best kills <b>'+RECORDS.bestKills+'</b> &middot; best combo <b>'+RECORDS.bestCombo+'</b> &middot; furthest wave <b>'+RECORDS.bestWave+'</b><br>'+
+    RECORDS.wins+'W &middot; '+RECORDS.losses+'L &middot; streak <b>'+RECORDS.streak+'</b> (best '+RECORDS.bestStreak+') &middot; '+RECORDS.totalKills+' put down all-time</div>';
+}
+loadRun(); loadRecords();
 // re-resolve stations + tables from the saved layout (falls back to the defaults).
 applyLayout(RUN.layout && RUN.layout.length ? RUN.layout : DEFAULT_LAYOUT);
 applyTables(RUN.tables && RUN.tables.length ? RUN.tables : DEFAULT_TABLES); rebuildSeats();
